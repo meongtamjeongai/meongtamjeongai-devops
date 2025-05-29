@@ -42,9 +42,14 @@ output "nat_instance_id" {
   value       = module.nat_instance.instance_id
 }
 
-output "nat_instance_public_ip" {
-  description = "NAT 인스턴스의 공인 IP 주소 (Elastic IP)"
-  value       = module.nat_instance.public_ip
+output "nat_instance_dynamic_public_ip" {
+  description = "NAT 인스턴스에 할당된 동적 공인 IP 주소 (주의: 재시작 시 변경 가능)"
+  value       = module.nat_instance.dynamic_public_ip # 모듈의 새 출력 참조
+}
+
+output "nat_instance_private_ip" {
+  description = "NAT 인스턴스의 사설 IP 주소"
+  value       = module.nat_instance.private_ip
 }
 
 output "nat_instance_primary_network_interface_id" {
