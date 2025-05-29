@@ -36,3 +36,18 @@ output "vpc_module_outputs" {
   value       = module.vpc # 모듈 전체를 출력하면 모든 output이 나옴
   sensitive   = true       # 내부적으로 민감한 정보가 있을 수 있으므로 true로 설정 권장
 }
+
+output "nat_instance_id" {
+  description = "생성된 NAT 인스턴스의 ID"
+  value       = module.nat_instance.instance_id
+}
+
+output "nat_instance_public_ip" {
+  description = "NAT 인스턴스의 공인 IP 주소 (Elastic IP)"
+  value       = module.nat_instance.public_ip
+}
+
+output "nat_instance_primary_network_interface_id" {
+  description = "NAT 인스턴스의 기본 네트워크 인터페이스 ID"
+  value       = module.nat_instance.primary_network_interface_id
+}
