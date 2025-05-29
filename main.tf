@@ -87,92 +87,93 @@ resource "aws_route" "private_db_subnet_to_nat" {
   depends_on = [module.nat_instance]
 }
 
-# --- NAT 기능 테스트를 위한 임시 리소스들 ---
+# NAT 인스턴스 임시 테스트용도
 
-# 1. EC2 인스턴스용 IAM 역할 및 SSM Session Manager 사용을 위한 인스턴스 프로파일
-resource "aws_iam_role" "ssm_ec2_role" {
-  name = "${var.project_name}-ssm-ec2-role-${var.environment}"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Action    = "sts:AssumeRole",
-      Effect    = "Allow",
-      Principal = { Service = "ec2.amazonaws.com" }
-    }]
-  })
-  tags = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "ssm_policy_attachment" {
-  role       = aws_iam_role.ssm_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" # AWS 관리형 정책
-}
-
-resource "aws_iam_instance_profile" "ssm_ec2_instance_profile" {
-  name = "${var.project_name}-ssm-ec2-profile-${var.environment}"
-  role = aws_iam_role.ssm_ec2_role.name
-  tags = local.common_tags
-}
-
-# 2. 테스트용 프라이빗 EC2 인스턴스를 위한 보안 그룹
-resource "aws_security_group" "private_test_ec2_sg" {
-  name        = "${var.project_name}-private-test-ec2-sg-${var.environment}"
-  description = "Allow outbound traffic for private test EC2 instance via NAT"
-  vpc_id      = module.vpc.vpc_id # VPC 모듈에서 출력된 VPC ID 사용
-
-  # 아웃바운드: 모든 트래픽 허용 (NAT를 통해 외부로 나감)
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1" # 모든 프로토콜
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # 인바운드: SSM Session Manager 사용 시 별도의 인바운드 규칙 불필요.
-  # 만약 Bastion Host를 통한 SSH 등을 고려한다면 해당 규칙 추가.
-  # 예:
-  # ingress {
-  #   description     = "Allow SSH from Bastion Host SG"
-  #   from_port       = 22
-  #   to_port         = 22
-  #   protocol        = "tcp"
-  #   security_groups = [ "sg-xxxxxxxxxxxxxxxxx" ] # Bastion Host의 보안 그룹 ID
-  # }
-
-  tags = local.common_tags
-}
-
-# 3. 테스트용 EC2 인스턴스에 사용할 Amazon Linux 2 AMI 조회
-data "aws_ami" "amazon_linux_2_for_test" {
+data "aws_ami" "amazon_linux_2_test" {
   most_recent = true
   owners      = ["amazon"] # Amazon 제공 AMI
+
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"] # Amazon Linux 2
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"] # Amazon Linux 2 최신 버전
   }
+
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
   }
 }
 
-# 4. 프라이빗 서브넷(애플리케이션용)에 테스트 EC2 인스턴스 생성
-resource "aws_instance" "private_test_ec2" {
-  ami           = data.aws_ami.amazon_linux_2_for_test.id
-  instance_type = "t2.micro"                       # 프리티어
-  subnet_id     = module.vpc.private_app_subnet_id # 앱용 프라이빗 서브넷에 배포
-  key_name      = var.ssh_key_name                 # var.ssh_key_name (SSM 사용 시 필수는 아님)
+resource "aws_security_group" "private_test_instance_sg" {
+  name        = "${var.project_name}-private-test-sg-${var.environment}"
+  description = "Security group for private test instance (allow all egress)"
+  vpc_id      = module.vpc.vpc_id # VPC 모듈의 출력값 사용
 
-  iam_instance_profile   = aws_iam_instance_profile.ssm_ec2_instance_profile.name # SSM 접속용 프로파일
-  vpc_security_group_ids = [aws_security_group.private_test_ec2_sg.id]            # 위에서 만든 보안 그룹
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = merge(local.common_tags, {
-    Name = "${var.project_name}-private-test-ec2-${var.environment}"
+    Name = "${var.project_name}-private-test-sg-${var.environment}"
+  })
+}
+
+resource "aws_instance" "private_nat_test" {
+  ami           = data.aws_ami.amazon_linux_2_test.id
+  instance_type = "t2.micro"                       # 프리티어 활용
+  subnet_id     = module.vpc.private_app_subnet_id # 프라이빗 앱 서브넷에 배포
+
+  vpc_security_group_ids = [aws_security_group.private_test_instance_sg.id]
+  # associate_public_ip_address = false # 프라이빗 서브넷이므로 기본값 false, 명시적으로도 false
+
+  # User Data 스크립트: 부팅 시 실행되어 외부 통신 테스트
+  user_data = <<-EOF
+              #!/bin/bash
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              echo "--- $(date) --- Starting NAT connectivity test from private instance ---"
+              
+              echo "1. Attempting to update yum package list (tests DNS and HTTP/HTTPS to repositories via NAT)..."
+              sudo yum update -y
+              if [ $? -eq 0 ]; then
+                echo "SUCCESS: yum update completed."
+              else
+                echo "FAILURE: yum update failed. Check NAT instance, routes, SGs, and NACLs."
+              fi
+              echo ""
+
+              echo "2. Attempting curl to google.com (tests general HTTPS outbound via NAT)..."
+              curl -I --connect-timeout 10 https://www.google.com
+              if [ $? -eq 0 ]; then
+                echo "SUCCESS: curl to https://www.google.com succeeded."
+              else
+                echo "FAILURE: curl to https://www.google.com failed."
+              fi
+              echo ""
+
+              echo "3. Attempting ping to 8.8.8.8 (tests ICMP outbound via NAT)..."
+              ping -c 3 8.8.8.8
+              if [ $? -eq 0 ]; then
+                echo "SUCCESS: ping to 8.8.8.8 succeeded."
+              else
+                echo "FAILURE: ping to 8.8.8.8 failed. (Note: ICMP might be blocked by intermediate firewalls/SGs even if NAT works for TCP/UDP)."
+              fi
+              echo ""
+              
+              echo "--- $(date) --- NAT connectivity test finished ---"
+              EOF
+
+  tags = merge(local.common_tags, {
+    Name    = "${var.project_name}-private-nat-test-${var.environment}"
+    Purpose = "NAT Connectivity Test"
   })
 
-  # NAT 인스턴스로 향하는 라우팅 규칙이 적용된 후에 이 인스턴스가 생성되도록 의존성 명시
+  # NAT 인스턴스 및 라우팅이 준비된 후에 이 테스트 인스턴스가 생성되도록 의존성 추가
   depends_on = [
-    aws_route.private_app_subnet_to_nat,
-    aws_route.private_db_subnet_to_nat
+    module.nat_instance,
+    aws_route.private_app_subnet_to_nat, # 앱 서브넷에 라우트가 적용된 후
+    aws_route.private_db_subnet_to_nat   # (선택적) DB 서브넷 라우트도 완료된 후
   ]
 }
