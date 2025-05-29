@@ -56,3 +56,18 @@ output "nat_instance_primary_network_interface_id" {
   description = "NAT 인스턴스의 기본 네트워크 인터페이스 ID"
   value       = module.nat_instance.primary_network_interface_id
 }
+
+output "backend_asg_name" {
+  description = "백엔드 Auto Scaling Group의 이름"
+  value       = module.ec2_backend.asg_name
+}
+
+output "backend_security_group_id" {
+  description = "백엔드 EC2 인스턴스용 보안 그룹 ID (ALB 설정에 필요)"
+  value       = module.ec2_backend.security_group_id
+}
+
+output "backend_launch_template_id" {
+  description = "백엔드 EC2 인스턴스용 시작 템플릿 ID"
+  value       = module.ec2_backend.launch_template_id
+}

@@ -87,15 +87,14 @@ resource "aws_route" "private_db_subnet_to_nat" {
   depends_on = [module.nat_instance]
 }
 
-# NAT 인스턴스 임시 테스트용도
-
-data "aws_ami" "amazon_linux_2_test" {
+# 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2)
+data "aws_ami" "amazon_linux_2_for_backend" {
   most_recent = true
   owners      = ["amazon"] # Amazon 제공 AMI
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"] # Amazon Linux 2 최신 버전
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"] # Amazon Linux 2 최신 HVM GP2 AMI
   }
 
   filter {
@@ -104,76 +103,32 @@ data "aws_ami" "amazon_linux_2_test" {
   }
 }
 
-resource "aws_security_group" "private_test_instance_sg" {
-  name        = "${var.project_name}-private-test-sg-${var.environment}"
-  description = "Security group for private test instance (allow all egress)"
-  vpc_id      = module.vpc.vpc_id # VPC 모듈의 출력값 사용
+# EC2 백엔드 모듈 호출
+module "ec2_backend" {
+  source = "./modules/ec2_backend" # ./modules/ec2_backend 디렉토리 참조
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # 필수 입력 변수 전달
+  project_name           = var.project_name
+  environment            = var.environment
+  common_tags            = local.common_tags
+  vpc_id                 = module.vpc.vpc_id                          # VPC 모듈 출력값
+  private_app_subnet_ids = [module.vpc.private_app_subnet_id]         # VPC 모듈 출력값 (현재 단일 앱 서브넷)
+  ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id # 위에서 조회한 AMI ID
 
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-private-test-sg-${var.environment}"
-  })
-}
+  # 선택적 입력 변수 전달 (필요시 루트 variables.tf 에서 관리 가능)
+  instance_type = "t2.micro"        # 프리티어 (또는 var.backend_instance_type 등으로 변경 가능)
+  ssh_key_name  = var.ssh_key_name  # 루트 변수 사용 (디버깅용)
+  my_ip_for_ssh = var.my_ip_for_ssh # 루트 변수 사용 (디버깅용)
 
-resource "aws_instance" "private_nat_test" {
-  ami           = data.aws_ami.amazon_linux_2_test.id
-  instance_type = "t2.micro"                       # 프리티어 활용
-  subnet_id     = module.vpc.private_app_subnet_id # 프라이빗 앱 서브넷에 배포
+  # ASG 설정 (모듈 기본값 사용 또는 루트 변수로 오버라이드)
+  # asg_min_size              = 1
+  # asg_max_size              = 2
+  # asg_desired_capacity      = 1
 
-  vpc_security_group_ids = [aws_security_group.private_test_instance_sg.id]
-  # associate_public_ip_address = false # 프라이빗 서브넷이므로 기본값 false, 명시적으로도 false
+  # FastAPI Docker 이미지 (모듈 기본값 사용 또는 루트 변수로 오버라이드)
+  # fastapi_docker_image      = "my-docker-registry/my-fastapi-app:latest"
+  # fastapi_app_port          = 8000 # 컨테이너 내부 포트가 다른 경우
 
-  # User Data 스크립트: 부팅 시 실행되어 외부 통신 테스트
-  user_data = <<-EOF
-              #!/bin/bash
-              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              echo "--- $(date) --- Starting NAT connectivity test from private instance ---"
-              
-              echo "1. Attempting to update yum package list (tests DNS and HTTP/HTTPS to repositories via NAT)..."
-              sudo yum update -y
-              if [ $? -eq 0 ]; then
-                echo "SUCCESS: yum update completed."
-              else
-                echo "FAILURE: yum update failed. Check NAT instance, routes, SGs, and NACLs."
-              fi
-              echo ""
-
-              echo "2. Attempting curl to google.com (tests general HTTPS outbound via NAT)..."
-              curl -I --connect-timeout 10 https://www.google.com
-              if [ $? -eq 0 ]; then
-                echo "SUCCESS: curl to https://www.google.com succeeded."
-              else
-                echo "FAILURE: curl to https://www.google.com failed."
-              fi
-              echo ""
-
-              echo "3. Attempting ping to 8.8.8.8 (tests ICMP outbound via NAT)..."
-              ping -c 3 8.8.8.8
-              if [ $? -eq 0 ]; then
-                echo "SUCCESS: ping to 8.8.8.8 succeeded."
-              else
-                echo "FAILURE: ping to 8.8.8.8 failed. (Note: ICMP might be blocked by intermediate firewalls/SGs even if NAT works for TCP/UDP)."
-              fi
-              echo ""
-              
-              echo "--- $(date) --- NAT connectivity test finished ---"
-              EOF
-
-  tags = merge(local.common_tags, {
-    Name    = "${var.project_name}-private-nat-test-${var.environment}"
-    Purpose = "NAT Connectivity Test"
-  })
-
-  # NAT 인스턴스 및 라우팅이 준비된 후에 이 테스트 인스턴스가 생성되도록 의존성 추가
-  depends_on = [
-    module.nat_instance,
-    aws_route.private_app_subnet_to_nat, # 앱 서브넷에 라우트가 적용된 후
-    aws_route.private_db_subnet_to_nat   # (선택적) DB 서브넷 라우트도 완료된 후
-  ]
+  # 의존성: NAT 인스턴스가 준비된 후 EC2 인스턴스가 생성되도록 (Docker 이미지 pull 등)
+  depends_on = [module.nat_instance]
 }
