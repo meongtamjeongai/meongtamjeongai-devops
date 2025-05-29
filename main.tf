@@ -31,5 +31,5 @@ resource "null_resource" "test_vcs" {
 
 # 간단한 출력 값 정의
 output "vcs_test_message" {
-  value = "🚀 GitHub 연동 Terraform Cloud VCS 테스트 성공!"
+  value = "🚀 GitHub 연동 Terraform Cloud VCS 테스트 변경사항 체크"
 }
