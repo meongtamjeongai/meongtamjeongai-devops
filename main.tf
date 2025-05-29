@@ -1,12 +1,12 @@
 # terraform-aws-fastapi-infra/main.tf
 
 terraform {
-  required_version = ">= 1.1`2.0"
+  required_version = ">= 1.12.0"
 
   cloud {
     organization = "meongtamjeongai" # 👈 실제 Terraform Cloud 조직 이름으로 변경하세요!
     workspaces {
-      name = "meongtamjeongai-devops"         # 👈 실제 Terraform Cloud 작업 공간 이름으로 변경하세요!
+      name = "meongtamjeongai-devops" # 👈 실제 Terraform Cloud 작업 공간 이름으로 변경하세요!
     }
   }
 
@@ -36,11 +36,11 @@ module "vpc" {
   source = "./modules/vpc" # ./modules/vpc 디렉토리를 참조
 
   # modules/vpc/variables.tf 에 정의된 변수들에게 값 전달
-  aws_region          = var.aws_region
-  project_name        = var.project_name
-  environment         = var.environment
-  common_tags         = local.common_tags
-  availability_zone   = var.availability_zone # 루트 variables.tf 에 새로 추가된 변수
+  aws_region        = var.aws_region
+  project_name      = var.project_name
+  environment       = var.environment
+  common_tags       = local.common_tags
+  availability_zone = var.availability_zone # 루트 variables.tf 에 새로 추가된 변수
 
   # 필요에 따라 VPC 및 서브넷 CIDR 기본값을 여기서 오버라이드 할 수 있습니다.
   # 예시:
