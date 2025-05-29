@@ -1,42 +1,51 @@
-terraform {
-  required_version = ">= 1.12.0" # Terraform 최소 권장 버전
+# terraform-aws-fastapi-infra/main.tf
 
-  # Terraform Cloud 연동 설정
-  # VCS 기반 워크플로우에서는 이 블록이 없어도 TFC가 자동으로 workspace와 연결하지만,
-  # 명시적으로 선언해두면 로컬에서 `terraform init` 시 혼동을 줄일 수 있습니다.
+terraform {
+  required_version = ">= 1.1`2.0"
+
   cloud {
-    organization = "meongtamjeongai"
+    organization = "meongtamjeongai" # 👈 실제 Terraform Cloud 조직 이름으로 변경하세요!
     workspaces {
-      name = "meongtamjeongai-devops"
+      name = "meongtamjeongai-devops"         # 👈 실제 Terraform Cloud 작업 공간 이름으로 변경하세요!
     }
   }
 
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0" # AWS 프로바이더 버전 (최신 안정 버전 권장)
+      version = "~> 5.0"
     }
   }
 }
 
-# AWS 프로바이더 구성
 provider "aws" {
   region = var.aws_region
-  # AWS 자격 증명은 Terraform Cloud에 설정된 환경 변수
-  # (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)를 통해 자동으로 주입됩니다.
 }
 
-# 공통 태그 설정을 위한 local 변수 (선택 사항이지만 매우 유용)
 locals {
   common_tags = {
     Project     = var.project_name
     Environment = var.environment
     ManagedBy   = "Terraform"
-    CreatedAt   = timestamp()
-  } 
+    CreatedAt   = timestamp() # 생성 시간 태그 (현재 시간을 기록)
+  }
 }
 
-# 초기 테스트용 출력
-output "aws_provider_setup_status" {
-  value = "AWS provider가 성공적으로 구성되었으며, 리전 '${var.aws_region}'에 배포할 준비가 되었습니다. 다음 단계: VPC 구성"
+# VPC 모듈 호출
+module "vpc" {
+  source = "./modules/vpc" # ./modules/vpc 디렉토리를 참조
+
+  # modules/vpc/variables.tf 에 정의된 변수들에게 값 전달
+  aws_region          = var.aws_region
+  project_name        = var.project_name
+  environment         = var.environment
+  common_tags         = local.common_tags
+  availability_zone   = var.availability_zone # 루트 variables.tf 에 새로 추가된 변수
+
+  # 필요에 따라 VPC 및 서브넷 CIDR 기본값을 여기서 오버라이드 할 수 있습니다.
+  # 예시:
+  # vpc_cidr_block          = "10.100.0.0/16"
+  # public_subnet_cidr      = "10.100.1.0/24"
+  # private_subnet_app_cidr = "10.100.2.0/24"
+  # private_subnet_db_cidr  = "10.100.3.0/24"
 }
