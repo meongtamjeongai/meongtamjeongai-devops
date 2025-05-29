@@ -41,7 +41,7 @@ variable "ami_id" {
 variable "ssh_key_name" {
   description = "EC2 인스턴스에 연결할 키 페어 이름 (선택 사항, 디버깅용)"
   type        = string
-  default     = null
+  default     = "meongtamjeongai"
 }
 
 # Auto Scaling Group (ASG) 관련 변수
