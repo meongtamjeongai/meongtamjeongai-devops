@@ -6,9 +6,9 @@ output "vpc_id" {
   sensitive   = false # ID는 민감 정보가 아님
 }
 
-output "public_subnet_id" {
-  description = "생성된 퍼블릭 서브넷의 ID"
-  value       = module.vpc.public_subnet_id
+output "all_public_subnet_ids" {
+  description = "생성된 모든 퍼블릭 서브넷 ID 목록"
+  value       = module.vpc.public_subnet_ids
 }
 
 output "private_app_subnet_id" {

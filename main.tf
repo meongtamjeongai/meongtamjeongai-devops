@@ -61,7 +61,7 @@ module "nat_instance" {
   project_name         = var.project_name
   environment          = var.environment
   common_tags          = local.common_tags
-  public_subnet_id     = module.vpc.public_subnet_id                               # VPC 모듈의 출력값 사용
+  public_subnet_id     = module.vpc.public_subnet_ids[0]
   vpc_id               = module.vpc.vpc_id                                         # VPC 모듈의 출력값 사용
   private_subnet_cidrs = [var.private_subnet_app_cidr, var.private_subnet_db_cidr] # 루트 변수를 리스트로 구성하여 전달
 
