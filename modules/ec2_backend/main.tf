@@ -59,13 +59,13 @@ resource "aws_security_group" "ec2_backend_sg" {
 
   # 인바운드 규칙:
   # 💥 중요: ALB로부터의 트래픽 허용 규칙은 루트 모듈에서 aws_security_group_rule을 사용하여 추가합니다.
-  # ingress {
-  #   description     = "Allow HTTP traffic on app port from within VPC (placeholder for ALB)"
-  #   from_port       = var.fastapi_app_port
-  #   to_port         = var.fastapi_app_port
-  #   protocol        = "tcp"
-  #   cidr_blocks     = ["0.0.0.0/0"] # 👈 이 임시 규칙 제거!
-  # }
+  ingress {
+    description = "Allow HTTP traffic on app port from within VPC (placeholder for ALB)"
+    from_port   = var.host_app_port
+    to_port     = var.host_app_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   # SSH 접근 허용 (디버깅용, var.ssh_key_name이 제공된 경우)
   dynamic "ingress" {

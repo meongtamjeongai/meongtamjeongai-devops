@@ -97,3 +97,8 @@ output "rds_db_username" {
   value       = module.rds.db_instance_username # 모듈 출력값 참조
   sensitive   = true
 }
+
+output "ecr_repository_url" {
+  description = "생성된 Amazon ECR 리포지토리의 URL"
+  value       = aws_ecr_repository.fastapi_app.repository_url
+}

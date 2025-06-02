@@ -180,3 +180,17 @@ module "rds" {
   # 의존성: VPC 모듈(서브넷 ID, VPC ID)과 EC2 백엔드 모듈(보안 그룹 ID)이 완료된 후 실행
   depends_on = [module.vpc, module.ec2_backend]
 }
+
+resource "aws_ecr_repository" "fastapi_app" {
+  name                 = "${var.project_name}-${var.environment}-fastapi-app" # 예: fastapi-infra-dev-fastapi-app
+  image_tag_mutability = "MUTABLE" # 또는 "IMMUTABLE". MUTABLE은 태그 재사용 가능, IMMUTABLE은 불가.
+                                   # 운영 환경에서는 고유 태그에 IMMUTABLE을 권장할 수 있습니다.
+
+  image_scanning_configuration {
+    scan_on_push = true # 이미지 푸시 시 취약점 스캔 활성화
+  }
+
+  tags = merge(local.common_tags, {
+    Purpose = "FastAPI Application Docker Images"
+  })
+}
