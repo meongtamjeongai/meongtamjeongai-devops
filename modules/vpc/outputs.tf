@@ -15,14 +15,14 @@ output "public_subnet_ids" { # 👈 이름 변경 및 값 수정
   value       = [for subnet in aws_subnet.public : subnet.id]
 }
 
-output "public_subnet_cidr_block" {
-  description = "퍼블릭 서브넷에 할당된 CIDR 블록"
-  value       = aws_subnet.public.cidr_block
+output "public_subnet_cidr_blocks" {
+  description = "생성된 모든 퍼블릭 서브넷의 CIDR 블록 목록"
+  value       = [for subnet in aws_subnet.public : subnet.cidr_block]
 }
 
-output "public_subnet_availability_zone" {
-  description = "퍼블릭 서브넷이 위치한 가용 영역"
-  value       = aws_subnet.public.availability_zone
+output "public_subnet_availability_zones" {
+  description = "생성된 모든 퍼블릭 서브넷이 위치한 가용 영역 목록"
+  value       = [for subnet in aws_subnet.public : subnet.availability_zone]
 }
 
 output "private_app_subnet_id" {
