@@ -16,9 +16,9 @@ output "private_app_subnet_id" {
   value       = module.vpc.private_app_subnet_id
 }
 
-output "private_db_subnet_id" {
-  description = "생성된 데이터베이스용 프라이빗 서브넷의 ID"
-  value       = module.vpc.private_db_subnet_id
+output "all_private_db_subnet_ids" {
+  description = "생성된 모든 프라이빗 DB 서브넷 ID 목록"
+  value       = module.vpc.private_db_subnet_ids # 👈 VPC 모듈의 리스트 출력값 전체를 사용
 }
 
 output "private_app_route_table_id" {
