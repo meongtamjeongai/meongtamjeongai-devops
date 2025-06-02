@@ -105,30 +105,54 @@ data "aws_ami" "amazon_linux_2_for_backend" {
 
 # EC2 백엔드 모듈 호출
 module "ec2_backend" {
-  source = "./modules/ec2_backend" # ./modules/ec2_backend 디렉토리 참조
+  source = "./modules/ec2_backend"
 
-  # 필수 입력 변수 전달
   project_name           = var.project_name
   environment            = var.environment
   common_tags            = local.common_tags
-  vpc_id                 = module.vpc.vpc_id                          # VPC 모듈 출력값
-  private_app_subnet_ids = [module.vpc.private_app_subnet_id]         # VPC 모듈 출력값 (현재 단일 앱 서브넷)
-  ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id # 위에서 조회한 AMI ID
+  vpc_id                 = module.vpc.vpc_id
+  private_app_subnet_ids = [module.vpc.private_app_subnet_id]
+  ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id
+  instance_type          = "t2.micro"
+  ssh_key_name           = var.ssh_key_name
+  my_ip_for_ssh          = var.my_ip_for_ssh
+  backend_app_port       = var.backend_app_port # 루트 변수 사용
 
-  # 선택적 입력 변수 전달 (필요시 루트 variables.tf 에서 관리 가능)
-  instance_type = "t2.micro"        # 프리티어 (또는 var.backend_instance_type 등으로 변경 가능)
-  ssh_key_name  = var.ssh_key_name  # 루트 변수 사용 (디버깅용)
-  my_ip_for_ssh = var.my_ip_for_ssh # 루트 변수 사용 (디버깅용)
+  # 🎯 ALB 대상 그룹 ARN 전달 (아래 alb 모듈 생성 후 연결)
+  target_group_arns = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
 
-  # ASG 설정 (모듈 기본값 사용 또는 루트 변수로 오버라이드)
-  # asg_min_size              = 1
-  # asg_max_size              = 2
-  # asg_desired_capacity      = 1
-
-  # FastAPI Docker 이미지 (모듈 기본값 사용 또는 루트 변수로 오버라이드)
-  # fastapi_docker_image      = "my-docker-registry/my-fastapi-app:latest"
-  # fastapi_app_port          = 8000 # 컨테이너 내부 포트가 다른 경우
-
-  # 의존성: NAT 인스턴스가 준비된 후 EC2 인스턴스가 생성되도록 (Docker 이미지 pull 등)
   depends_on = [module.nat_instance]
+}
+
+# ALB 모듈 호출
+module "alb" {
+  source = "./modules/alb"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  common_tags       = local.common_tags
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = [module.vpc.public_subnet_id] # 현재 단일 퍼블릭 서브넷 사용
+
+  backend_app_port          = var.backend_app_port                 # 루트의 backend_app_port -> alb의 backend_app_port로 전달
+  backend_security_group_id = module.ec2_backend.security_group_id # 백엔드 SG ID 전달
+
+  # HTTPS 사용 시 ACM 인증서 ARN 전달
+  # certificate_arn           = "arn:aws:acm:ap-northeast-2:123456789012:certificate/your-cert-id"
+
+  depends_on = [module.ec2_backend] # 백엔드 SG가 먼저 생성되어야 함
+}
+
+# ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가
+resource "aws_security_group_rule" "allow_alb_to_backend" {
+  type                     = "ingress"
+  description              = "Allow traffic from ALB to backend EC2 instances on app port"
+  from_port                = var.backend_app_port # 루트의 backend_app_port 사용
+  to_port                  = var.backend_app_port # 루트의 backend_app_port 사용
+  protocol                 = "tcp"
+  security_group_id        = module.ec2_backend.security_group_id # 대상: 백엔드 SG
+  source_security_group_id = module.alb.security_group_id         # 소스: ALB SG
+
+  # ALB 모듈과 EC2 백엔드 모듈이 모두 생성된 후에 이 규칙이 적용되도록 의존성 명시
+  depends_on = [module.alb, module.ec2_backend]
 }

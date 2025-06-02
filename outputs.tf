@@ -71,3 +71,8 @@ output "backend_launch_template_id" {
   description = "백엔드 EC2 인스턴스용 시작 템플릿 ID"
   value       = module.ec2_backend.launch_template_id
 }
+
+output "alb_dns_name" {
+  description = "애플리케이션 로드 밸런서의 DNS 주소 (애플리케이션 접속 URL)"
+  value       = module.alb.alb_dns_name
+}

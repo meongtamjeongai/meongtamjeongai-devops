@@ -88,15 +88,26 @@ variable "fastapi_app_port" {
   default     = 80 # 위 예제 이미지는 80 포트에서 실행됨
 }
 
-# 보안 그룹에서 ALB로부터의 트래픽을 허용하기 위한 변수 (추후 ALB 모듈 생성 시 사용)
-variable "alb_security_group_id" {
-  description = "ALB 보안 그룹 ID (추후 ALB에서 오는 트래픽 허용용)"
-  type        = string
-  default     = null # 지금은 사용하지 않음
+variable "host_app_port" { # 👈 새로 추가: 컨테이너를 호스트에 노출할 포트
+  description = "EC2 호스트에서 Docker 컨테이너의 애플리케이션을 노출할 포트 (ALB가 이 포트를 타겟)"
+  type        = number
+  default     = 80
 }
 
 variable "my_ip_for_ssh" {
   description = "EC2 인스턴스에 SSH 접근을 허용할 나의 IP 주소 (CIDR 형태, 디버깅용)"
   type        = string
   default     = "0.0.0.0/0" # ☢️ 보안 경고: 실제 IP로 변경 권장!
+}
+
+variable "target_group_arns" {
+  description = "EC2 인스턴스를 등록할 ALB 대상 그룹 ARN 목록"
+  type        = list(string)
+  default     = [] # 기본값은 빈 리스트
+}
+
+variable "backend_app_port" {
+  description = "백엔드 애플리케이션이 EC2 인스턴스에서 사용하는 포트 (ALB 대상 그룹 및 보안 그룹 규칙에 사용)"
+  type        = number
+  default     = 80 # ec2_backend 모듈의 user_data.sh 에서 호스트의 80 포트로 매핑했음
 }

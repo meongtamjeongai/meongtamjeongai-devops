@@ -5,10 +5,11 @@ locals {
     TerraformModule = "ec2-backend"
   })
 
-  # User Data 렌더링 시 사용할 변수 맵
-  user_data_vars = {
-    fastapi_docker_image = var.fastapi_docker_image
-    fastapi_app_port     = var.fastapi_app_port
+  # User Data 렌더링 시 사용할 변수 맵 (플레이스홀더 이름 변경 및 host_app_port 추가)
+  user_data_template_vars = {
+    fastapi_docker_image_placeholder    = var.fastapi_docker_image
+    container_internal_port_placeholder = var.fastapi_app_port # 컨테이너 내부 포트
+    host_exposed_port_placeholder       = var.host_app_port    # 호스트에 노출될 포트
   }
 }
 
@@ -57,16 +58,14 @@ resource "aws_security_group" "ec2_backend_sg" {
   vpc_id      = var.vpc_id
 
   # 인바운드 규칙:
-  # 추후 ALB로부터 오는 트래픽 허용 (현재는 VPC 내부에서 앱 포트로 접근 허용 예시)
-  # 실제 운영 시에는 ALB의 보안 그룹 ID를 소스로 지정하는 것이 좋습니다.
-  ingress {
-    description = "Allow HTTP traffic on app port from within VPC (placeholder for ALB)"
-    from_port   = var.fastapi_app_port # User Data에서 호스트의 80번 포트와 연결됨
-    to_port     = var.fastapi_app_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # 💥 임시로 모든 IP 허용. ALB 연동 후 ALB SG ID로 변경 필요!
-    # source_security_group_id = var.alb_security_group_id # 추후 이 방식으로 변경
-  }
+  # 💥 중요: ALB로부터의 트래픽 허용 규칙은 루트 모듈에서 aws_security_group_rule을 사용하여 추가합니다.
+  # ingress {
+  #   description     = "Allow HTTP traffic on app port from within VPC (placeholder for ALB)"
+  #   from_port       = var.fastapi_app_port
+  #   to_port         = var.fastapi_app_port
+  #   protocol        = "tcp"
+  #   cidr_blocks     = ["0.0.0.0/0"] # 👈 이 임시 규칙 제거!
+  # }
 
   # SSH 접근 허용 (디버깅용, var.ssh_key_name이 제공된 경우)
   dynamic "ingress" {
@@ -76,7 +75,7 @@ resource "aws_security_group" "ec2_backend_sg" {
       from_port   = 22
       to_port     = 22
       protocol    = "tcp"
-      cidr_blocks = [var.my_ip_for_ssh]
+      cidr_blocks = [var.my_ip_for_ssh] # 루트에서 전달받은 my_ip_for_ssh 사용
     }
   }
 
@@ -109,7 +108,7 @@ resource "aws_launch_template" "ec2_backend_lt" {
   }
 
   # User Data 스크립트 파일 렌더링 및 Base64 인코딩
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", local.user_data_vars))
+  user_data = base64encode(templatefile("${path.module}/user_data.sh", local.user_data_template_vars))
 
   # 인스턴스에 적용될 태그
   tag_specifications {
@@ -159,6 +158,9 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
   health_check_type         = var.health_check_type
   health_check_grace_period = var.health_check_grace_period
 
+  # 🎯 ALB 대상 그룹에 ASG 인스턴스 자동 등록
+  target_group_arns = var.target_group_arns # 입력받은 대상 그룹 ARN 목록 사용
+
   # 인스턴스 종료 정책 (기본값 또는 필요에 따라 설정)
   # termination_policies = ["Default"]
 
@@ -166,7 +168,7 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
   # Terraform 태그와 ASG 자체 태그를 합쳐서 인스턴스에 적용
   dynamic "tag" {
     for_each = merge(local.module_tags, {
-      Name                 = "${var.project_name}-backend-instance-${var.environment}" # ASG가 생성하는 인스턴스의 Name 태그
+      Name                 = "${var.project_name}-backend-instance-${var.environment}"
       "AmazonEC2CreatedBy" = "TerraformASG"
     })
     content {

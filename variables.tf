@@ -61,3 +61,9 @@ variable "my_ip_for_ssh" {
   type        = string
   default     = "0.0.0.0/0" # ☢️ 보안 경고: 실제 IP로 반드시 변경하세요!
 }
+
+variable "backend_app_port" {
+  description = "백엔드 애플리케이션이 EC2 인스턴스에서 사용하는 포트 (ALB 대상 그룹 및 보안 그룹 규칙에 사용)"
+  type        = number
+  default     = 80 # ec2_backend 모듈의 user_data.sh 에서 호스트의 80 포트로 매핑했음
+}
