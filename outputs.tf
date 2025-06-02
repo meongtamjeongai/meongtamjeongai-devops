@@ -76,3 +76,24 @@ output "alb_dns_name" {
   description = "애플리케이션 로드 밸런서의 DNS 주소 (애플리케이션 접속 URL)"
   value       = module.alb.alb_dns_name
 }
+
+output "rds_instance_endpoint" {
+  description = "RDS DB 인스턴스 연결 엔드포인트 주소"
+  value       = module.rds.db_instance_endpoint
+}
+
+output "rds_instance_port" {
+  description = "RDS DB 인스턴스 연결 포트"
+  value       = module.rds.db_instance_port
+}
+
+output "rds_db_name" {
+  description = "RDS DB 인스턴스의 초기 데이터베이스 이름"
+  value       = module.rds.db_instance_name # 모듈 출력값 참조
+}
+
+output "rds_db_username" {
+  description = "RDS DB 인스턴스의 마스터 사용자 이름"
+  value       = module.rds.db_instance_username # 모듈 출력값 참조
+  sensitive   = true
+}

@@ -157,3 +157,20 @@ resource "aws_security_group_rule" "allow_alb_to_backend" {
   # 이 규칙은 alb와 ec2_backend 모듈이 각각의 SG를 만든 후에 적용됨
   depends_on = [module.alb, module.ec2_backend]
 }
+
+# RDS 모듈 호출
+module "rds" {
+  source = "./modules/rds" # ./modules/rds 디렉토리 참조
+
+  # 필수 입력 변수 전달
+  project_name      = var.project_name
+  environment       = var.environment
+  common_tags       = local.common_tags
+  vpc_id            = module.vpc.vpc_id                    # VPC 모듈 출력값
+  db_subnet_ids     = [module.vpc.private_db_subnet_id]    # VPC 모듈 출력값 (현재 단일 DB 서브넷)
+  db_password       = var.db_password                      # 루트 variables.tf (Terraform Cloud에서 주입)
+  backend_ec2_sg_id = module.ec2_backend.security_group_id # EC2 백엔드 모듈 출력값
+
+  # 의존성: VPC 모듈(서브넷 ID, VPC ID)과 EC2 백엔드 모듈(보안 그룹 ID)이 완료된 후 실행
+  depends_on = [module.vpc, module.ec2_backend]
+}

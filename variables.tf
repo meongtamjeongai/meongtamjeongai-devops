@@ -65,5 +65,13 @@ variable "my_ip_for_ssh" {
 variable "backend_app_port" {
   description = "백엔드 애플리케이션이 EC2 인스턴스에서 사용하는 포트 (ALB 대상 그룹 및 보안 그룹 규칙에 사용)"
   type        = number
-  default     = 80 # ec2_backend 모듈의 user_data.sh 에서 호스트의 80 포트로 매핑했음
+  default     = 80
+}
+
+variable "db_password" {
+  description = "데이터베이스 마스터 사용자 암호 (매우 민감한 정보!)"
+  type        = string
+  sensitive   = true # Terraform 출력에 표시되지 않도록 함
+  # 이 값은 Terraform Cloud 변수(민감) 또는 AWS Secrets Manager를 통해 관리하는 것이 가장 좋습니다.
+  # 루트 모듈에서 값을 전달받아야 합니다.
 }
