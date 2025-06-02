@@ -46,7 +46,7 @@ variable "private_subnet_app_cidr" {
 variable "private_db_subnet_cidrs" { # 👈 리스트 형태로 변경 또는 신규 추가
   description = "각 가용 영역에 생성할 프라이빗 DB 서브넷 CIDR 블록 목록"
   type        = list(string)
-  default     = ["10.0.3.0/24", "10.0.103.0/24"] # 예시: 2개의 CIDR 블록 (public_subnet_cidrs와 겹치지 않게)
+  default     = ["10.0.30.0/24", "10.0.103.0/24"] # 예시: 2개의 CIDR 블록 (public_subnet_cidrs와 겹치지 않게)
 }
 
 # NAT 인스턴스 접속용 변수
