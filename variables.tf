@@ -34,7 +34,7 @@ variable "vpc_cidr_block" {
 variable "public_subnet_cidrs" {
   description = "각 가용 영역에 생성할 퍼블릭 서브넷 CIDR 블록 목록"
   type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.101.0/24"] # 예시: 2개의 CIDR 블록
+  default     = ["10.0.100.0/24", "10.0.101.0/24"] # 예시: 2개의 CIDR 블록
 }
 
 variable "private_subnet_app_cidr" {
