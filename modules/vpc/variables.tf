@@ -42,9 +42,9 @@ variable "private_subnet_app_cidr" {
   type        = string
 }
 
-variable "private_subnet_db_cidr" {
-  description = "RDS DB용 프라이빗 서브넷 CIDR 블록"
-  type        = string
+variable "private_db_subnet_cidrs" {
+  description = "각 가용 영역에 생성할 프라이빗 DB 서브넷 CIDR 블록 목록"
+  type        = list(string)
 }
 
 # 프라이빗 서브넷을 위한 단일 AZ 지정 변수 (기존 private_subnet_app/db가 사용할 AZ)

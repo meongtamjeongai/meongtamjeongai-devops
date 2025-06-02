@@ -48,22 +48,26 @@ module "vpc" {
   primary_availability_zone = var.availability_zones[0] # 👈 프라이빗 서브넷용 AZ (예: 리스트의 첫 번째 AZ 사용)
 
   # 루트 variables.tf에 정의된 CIDR 값들을 명시적으로 전달
-  vpc_cidr_block = var.vpc_cidr_block
-
+  vpc_cidr_block          = var.vpc_cidr_block
   private_subnet_app_cidr = var.private_subnet_app_cidr
-  private_subnet_db_cidr  = var.private_subnet_db_cidr
+
+  private_db_subnet_cidrs = var.private_db_subnet_cidrs
 }
 
 # NAT 인스턴스 모듈 호출
 module "nat_instance" {
   source = "./modules/nat_instance"
 
-  project_name         = var.project_name
-  environment          = var.environment
-  common_tags          = local.common_tags
-  public_subnet_id     = module.vpc.public_subnet_ids[0]
-  vpc_id               = module.vpc.vpc_id                                         # VPC 모듈의 출력값 사용
-  private_subnet_cidrs = [var.private_subnet_app_cidr, var.private_subnet_db_cidr] # 루트 변수를 리스트로 구성하여 전달
+  project_name     = var.project_name
+  environment      = var.environment
+  common_tags      = local.common_tags
+  public_subnet_id = module.vpc.public_subnet_ids[0]
+  vpc_id           = module.vpc.vpc_id # VPC 모듈의 출력값 사용
+
+  private_subnet_cidrs = concat(
+    [var.private_subnet_app_cidr], # 단일 앱 프라이빗 서브넷 CIDR
+    var.private_db_subnet_cidrs    # DB 프라이빗 서브넷 CIDR 목록 (리스트)
+  )
 
   # nat_instance_type 등은 NAT 모듈 내 기본값 사용
   ssh_key_name  = var.ssh_key_name
@@ -167,7 +171,7 @@ module "rds" {
   environment       = var.environment
   common_tags       = local.common_tags
   vpc_id            = module.vpc.vpc_id                    # VPC 모듈 출력값
-  db_subnet_ids     = [module.vpc.private_db_subnet_id]    # VPC 모듈 출력값 (현재 단일 DB 서브넷)
+  db_subnet_ids     = module.vpc.private_db_subnet_ids     # VPC 모듈 출력값 (현재 단일 DB 서브넷)
   db_password       = var.db_password                      # 루트 variables.tf (Terraform Cloud에서 주입)
   backend_ec2_sg_id = module.ec2_backend.security_group_id # EC2 백엔드 모듈 출력값
 

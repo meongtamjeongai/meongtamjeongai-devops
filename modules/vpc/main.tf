@@ -59,9 +59,16 @@ resource "aws_subnet" "private_app" {
 
 # 2-3. 프라이빗 서브넷 (RDS 데이터베이스용)
 resource "aws_subnet" "private_db" {
+  for_each = {
+    for i, az in var.availability_zones : i => { # public 서브넷과 동일한 AZ 목록 사용
+      az   = az
+      cidr = var.private_db_subnet_cidrs[i] # DB용 CIDR 목록 사용
+    }
+  }
+
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.private_subnet_db_cidr
-  availability_zone       = var.primary_availability_zone # 단일 AZ 지정
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.az
   map_public_ip_on_launch = false
 
   tags = merge(local.module_tags, {
@@ -131,7 +138,11 @@ resource "aws_route_table" "private_db" {
   })
 }
 
+# 프라이빗 DB 서브넷들에 대한 라우트 테이블 연결(association)도 for_each를 사용해야 합니다.
+# 예를 들어, 모든 DB 서브넷이 동일한 (NAT로 향하는) 프라이빗 라우트 테이블을 사용한다면:
 resource "aws_route_table_association" "private_db" {
-  subnet_id      = aws_subnet.private_db.id
-  route_table_id = aws_route_table.private_db.id
+  for_each       = aws_subnet.private_db # aws_subnet.private_db가 for_each로 생성되므로
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.private_db.id # private_db_rt 를 참조 (이름 확인 필요, 예시임)
+                                                # 또는 각 AZ별로 별도의 라우트 테이블을 가질 수도 있음
 }

@@ -40,9 +40,9 @@ output "private_app_subnet_availability_zone" {
   value       = aws_subnet.private_app.availability_zone
 }
 
-output "private_db_subnet_id" {
-  description = "생성된 데이터베이스용 프라이빗 서브넷의 ID"
-  value       = aws_subnet.private_db.id
+output "private_db_subnet_ids" {
+  description = "생성된 모든 프라이빗 DB 서브넷의 ID 목록"
+  value       = [for subnet in aws_subnet.private_db : subnet.id]
 }
 
 output "private_db_subnet_cidr_block" {
