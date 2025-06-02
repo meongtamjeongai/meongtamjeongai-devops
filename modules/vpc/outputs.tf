@@ -45,14 +45,14 @@ output "private_db_subnet_ids" {
   value       = [for subnet in aws_subnet.private_db : subnet.id]
 }
 
-output "private_db_subnet_cidr_block" {
-  description = "데이터베이스용 프라이빗 서브넷에 할당된 CIDR 블록"
-  value       = aws_subnet.private_db.cidr_block
+output "private_db_subnet_cidr_blocks" {
+  description = "생성된 모든 프라이빗 DB 서브넷의 CIDR 블록 목록"
+  value       = [for subnet in aws_subnet.private_db : subnet.cidr_block]
 }
 
-output "private_db_subnet_availability_zone" {
-  description = "데이터베이스용 프라이빗 서브넷이 위치한 가용 영역"
-  value       = aws_subnet.private_db.availability_zone
+output "private_db_subnet_availability_zones" {
+  description = "생성된 모든 프라이빗 DB 서브넷이 위치한 가용 영역 목록"
+  value       = [for subnet in aws_subnet.private_db : subnet.availability_zone]
 }
 
 output "private_app_route_table_id" {
