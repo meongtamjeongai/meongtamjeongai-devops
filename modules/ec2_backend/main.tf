@@ -7,9 +7,9 @@ locals {
 
   # User Data 렌더링 시 사용할 변수 맵 (플레이스홀더 이름 변경 및 host_app_port 추가)
   user_data_template_vars = {
-    fastapi_docker_image_placeholder    = var.fastapi_docker_image
-    container_internal_port_placeholder = var.fastapi_app_port # 컨테이너 내부 포트
-    host_exposed_port_placeholder       = var.host_app_port    # 호스트에 노출될 포트
+    fastapi_docker_image_placeholder    = var.fastapi_docker_image # 👈 모듈 입력 변수(var.fastapi_docker_image)를 플레이스홀더 이름으로 매핑
+    container_internal_port_placeholder = var.fastapi_app_port     # 컨테이너 내부 포트
+    host_exposed_port_placeholder       = var.host_app_port        # 호스트에 노출될 포트
   }
 }
 
@@ -148,24 +148,47 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
 
   launch_template {
     id      = aws_launch_template.ec2_backend_lt.id
-    version = "$Latest" # 항상 최신 버전의 시작 템플릿 사용
+    version = aws_launch_template.ec2_backend_lt.latest_version # 👈 항상 최신 버전의 시작 템플릿을 사용하도록 설정
   }
 
   min_size                  = var.asg_min_size
   max_size                  = var.asg_max_size
   desired_capacity          = var.asg_desired_capacity
-  vpc_zone_identifier       = var.private_app_subnet_ids # 프라이빗 앱 서브넷 ID 목록
+  vpc_zone_identifier       = var.private_app_subnet_ids
   health_check_type         = var.health_check_type
   health_check_grace_period = var.health_check_grace_period
+  target_group_arns         = var.target_group_arns
 
-  # 🎯 ALB 대상 그룹에 ASG 인스턴스 자동 등록
-  target_group_arns = var.target_group_arns # 입력받은 대상 그룹 ARN 목록 사용
+  # 🎯 인스턴스 새로 고침 (Instance Refresh) 설정 추가 또는 확인
+  instance_refresh {
+    strategy = "Rolling" # 점진적 교체 방식 (다른 옵션: "Replace")
+    preferences {
+      # 새로 고침 중 유지해야 할 최소 정상 인스턴스 비율.
+      # 예: 100%로 설정하면, 새 인스턴스가 정상화된 후 이전 인스턴스를 종료 (더 안전하지만 느림)
+      # 예: 90%로 설정하면, 전체 용량의 10%까지만 동시에 교체 진행 가능
+      min_healthy_percentage = 90
 
-  # 인스턴스 종료 정책 (기본값 또는 필요에 따라 설정)
-  # termination_policies = ["Default"]
+      # 새 인스턴스가 시작된 후 애플리케이션이 완전히 준비되고 헬스 체크를 통과할 때까지 대기하는 시간(초).
+      # 이 시간 동안에는 min_healthy_percentage 계산에 포함되지 않거나, 헬스 체크를 유예합니다.
+      instance_warmup = 300 # 예: 5분
+
+      # 새로 고침을 특정 비율에서 일시 중지하고 대기할 수 있는 체크포인트 설정 (선택 사항)
+      # checkpoint_percentages = [33, 66, 100]
+      # checkpoint_delay       = "PT5M" # 각 체크포인트에서 5분 대기 (ISO 8601 duration format)
+
+      # 기타 고급 설정:
+      # scale_in_protected_instances = "Refresh" # 축소 방지된 인스턴스도 새로고침에 포함할지 여부
+      # standby_instances            = "Terminate" # 대기 상태 인스턴스 처리 방법
+    }
+    # 어떤 변경이 있을 때 새로 고침을 트리거할지 지정할 수 있습니다.
+    # 시작 템플릿 버전 변경은 ASG가 launch_template.version = "$Latest" 또는 .latest_version 을 사용할 때
+    # 자동으로 감지하고 업데이트를 시도하는 경향이 있지만, 명시적인 트리거를 설정할 수도 있습니다.
+    # 예를 들어, ASG의 특정 태그 값이 변경될 때 새로고침을 강제할 수 있습니다.
+    # triggers = ["tag"] # 예시: 태그 변경 시 새로고침 (이 경우 관련 태그도 관리해야 함)
+    # 현재는 launch_template의 version 변경을 주된 트리거로 간주합니다.
+  }
 
   # ASG가 생성하는 인스턴스에 자동으로 태그 전파
-  # Terraform 태그와 ASG 자체 태그를 합쳐서 인스턴스에 적용
   dynamic "tag" {
     for_each = merge(local.module_tags, {
       Name                 = "${var.project_name}-backend-instance-${var.environment}"
@@ -181,8 +204,4 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
   lifecycle {
     create_before_destroy = true
   }
-
-  # 서비스 연결 역할 (Service-Linked Role) - ASG가 특정 작업을 수행하기 위해 필요
-  # 보통 처음 ASG 생성 시 AWS가 자동으로 만들어주지만, 명시적으로 의존성을 표현할 수도 있습니다.
-  # depends_on = [aws_iam_role.ec2_backend_role] # 예시
 }

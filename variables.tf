@@ -1,5 +1,11 @@
 # terraform-aws-fastapi-infra/variables.tf
 
+variable "custom_fastapi_docker_image" {
+  description = "배포할 사용자 정의 FastAPI 애플리케이션 Docker 이미지 URI"
+  type        = string
+  default     = "tiangolo/uvicorn-gunicorn-fastapi:python3.9" # 기본값 또는 이전 버전 이미지
+}
+
 variable "aws_region" {
   description = "AWS 리소스를 배포할 리전입니다."
   type        = string

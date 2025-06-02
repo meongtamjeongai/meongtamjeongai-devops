@@ -79,7 +79,6 @@ variable "health_check_grace_period" {
 variable "fastapi_docker_image" {
   description = "실행할 FastAPI 애플리케이션의 Docker 이미지 (예: your-account/your-repo:latest)"
   type        = string
-  default     = "tiangolo/uvicorn-gunicorn-fastapi:python3.9" # 공개된 FastAPI 예제 이미지
 }
 
 variable "fastapi_app_port" {
