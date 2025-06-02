@@ -73,9 +73,9 @@ resource "aws_lb" "main" {
 
 # 3. 대상 그룹 (Target Group) 생성
 resource "aws_lb_target_group" "main" {
-  name_prefix = "${var.project_name}-tg-" # 이름이 32자 제한을 넘지 않도록 prefix 사용
-  port        = var.backend_app_port      # 백엔드 인스턴스의 애플리케이션 포트
-  protocol    = "HTTP"                    # ALB -> 백엔드 통신 프로토콜
+  name        = "${var.project_name}-${var.environment}-tg" # 👈 'name' 속성 사용
+  port        = var.backend_app_port                        # 백엔드 인스턴스의 애플리케이션 포트
+  protocol    = "HTTP"                                      # ALB -> 백엔드 통신 프로토콜
   vpc_id      = var.vpc_id
   target_type = "instance" # EC2 인스턴스를 대상으로 함
 
