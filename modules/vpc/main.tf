@@ -21,7 +21,7 @@ resource "aws_vpc" "main" {
 
 # 2. 서브넷 생성
 # 2-1. 퍼블릭 서브넷
-resource "aws_subnet" "public" {
+resource "" "public" {
 
   for_each = {
     for i, az in var.availability_zones : i => {

@@ -40,13 +40,11 @@ variable "public_subnet_cidrs" {
 variable "private_subnet_app_cidr" {
   description = "FastAPI 앱 서버용 프라이빗 서브넷 CIDR 블록"
   type        = string
-  default     = "10.0.2.0/24" # 👈 루트에서 값을 받도록 기본값 제거 또는 주석 처리
 }
 
 variable "private_subnet_db_cidr" {
   description = "RDS DB용 프라이빗 서브넷 CIDR 블록"
   type        = string
-  default     = "10.0.3.0/24" # 👈 루트에서 값을 받도록 기본값 제거 또는 주석 처리
 }
 
 # 프라이빗 서브넷을 위한 단일 AZ 지정 변수 (기존 private_subnet_app/db가 사용할 AZ)
