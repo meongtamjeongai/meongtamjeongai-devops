@@ -63,9 +63,3 @@ variable "certificate_arn" {
   type        = string
   default     = "arn:aws:acm:ap-northeast-2:314129306324:certificate/723d505b-7757-49c0-821f-930e50d04eb4"
 }
-
-# ALB의 보안 그룹이 백엔드 EC2 인스턴스의 보안 그룹으로 아웃바운드 트래픽을 허용하기 위해 필요합니다.
-variable "backend_security_group_id" {
-  description = "백엔드 EC2 인스턴스의 보안 그룹 ID"
-  type        = string
-}

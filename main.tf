@@ -116,12 +116,12 @@ module "ec2_backend" {
   instance_type          = "t2.micro"
   ssh_key_name           = var.ssh_key_name
   my_ip_for_ssh          = var.my_ip_for_ssh
-  backend_app_port       = var.backend_app_port # 루트 변수 사용
+  host_app_port          = var.backend_app_port # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
 
   # 🎯 ALB 대상 그룹 ARN 전달 (아래 alb 모듈 생성 후 연결)
   target_group_arns = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
 
-  depends_on = [module.nat_instance]
+  depends_on = [module.nat_instance, module.vpc] # NAT과 VPC가 준비된 후 실행
 }
 
 # ALB 모듈 호출
@@ -134,8 +134,8 @@ module "alb" {
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = [module.vpc.public_subnet_id] # 현재 단일 퍼블릭 서브넷 사용
 
-  backend_app_port          = var.backend_app_port                 # 루트의 backend_app_port -> alb의 backend_app_port로 전달
-  backend_security_group_id = module.ec2_backend.security_group_id # 백엔드 SG ID 전달
+  backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
+  # backend_security_group_id = module.ec2_backend.security_group_id # 백엔드 SG ID 전달
 
   # HTTPS 사용 시 ACM 인증서 ARN 전달
   # certificate_arn           = "arn:aws:acm:ap-northeast-2:123456789012:certificate/your-cert-id"
@@ -153,6 +153,6 @@ resource "aws_security_group_rule" "allow_alb_to_backend" {
   security_group_id        = module.ec2_backend.security_group_id # 대상: 백엔드 SG
   source_security_group_id = module.alb.security_group_id         # 소스: ALB SG
 
-  # ALB 모듈과 EC2 백엔드 모듈이 모두 생성된 후에 이 규칙이 적용되도록 의존성 명시
+  # 이 규칙은 alb와 ec2_backend 모듈이 각각의 SG를 만든 후에 적용됨
   depends_on = [module.alb, module.ec2_backend]
 }

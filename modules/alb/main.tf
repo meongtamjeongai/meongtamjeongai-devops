@@ -16,8 +16,7 @@ resource "aws_security_group" "alb_sg" {
   description = "Security group for Application Load Balancer"
   vpc_id      = var.vpc_id
 
-  # 인바운드 규칙:
-  # HTTP 트래픽 허용 (0.0.0.0/0 : 모든 곳에서)
+  # 인바운드 규칙 (이전과 동일)
   ingress {
     description      = "Allow HTTP traffic from anywhere"
     from_port        = 80
@@ -26,8 +25,6 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }
-
-  # HTTPS 트래픽 허용 (ACM 인증서가 제공된 경우)
   dynamic "ingress" {
     for_each = var.certificate_arn != null ? [1] : []
     content {
@@ -40,15 +37,14 @@ resource "aws_security_group" "alb_sg" {
     }
   }
 
-  # 아웃바운드 규칙: 백엔드 EC2 인스턴스로 트래픽 전달 허용
+  # 아웃바운드 규칙: 💥 모든 외부 트래픽 허용으로 변경
   egress {
-    description = "Allow traffic to backend EC2 instances on app port"
-    from_port   = var.backend_app_port # 백엔드 앱 포트
-    to_port     = var.backend_app_port
-    protocol    = "tcp"
-    # 대상은 백엔드 EC2 인스턴스의 보안 그룹
-    # cidr_blocks = ["0.0.0.0/0"] # 또는 더 제한적으로 설정 가능
-    security_groups = [var.backend_security_group_id]
+    description = "Allow all outbound traffic from ALB"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1" # 모든 프로토콜
+    cidr_blocks = ["0.0.0.0/0"]
+    # security_groups = [var.backend_security_group_id] # 👈 이 라인 제거 또는 주석 처리
   }
 
   tags = local.module_tags
