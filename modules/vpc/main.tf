@@ -22,15 +22,23 @@ resource "aws_vpc" "main" {
 # 2. 서브넷 생성
 # 2-1. 퍼블릭 서브넷
 resource "aws_subnet" "public" {
+
+  for_each = {
+    for i, az in var.availability_zones : i => {
+      az   = az
+      cidr = var.public_subnet_cidrs[i]
+    }
+  }
+
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidr
-  availability_zone       = var.availability_zone
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.az
   map_public_ip_on_launch = true
 
   tags = merge(local.module_tags, {
-    Name = "${var.project_name}-public-subnet-${var.availability_zone}-${var.environment}"
+    Name = "${var.project_name}-public-subnet-${each.value.az}-${var.environment}"
     Tier = "Public"
-    AZ   = var.availability_zone
+    AZ   = each.value.az
   })
 }
 
@@ -38,13 +46,13 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private_app" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.private_subnet_app_cidr
-  availability_zone       = var.availability_zone
+  availability_zone       = var.primary_availability_zone # 단일 AZ 지정
   map_public_ip_on_launch = false
 
   tags = merge(local.module_tags, {
-    Name  = "${var.project_name}-private-app-subnet-${var.availability_zone}-${var.environment}"
+    Name  = "${var.project_name}-private-app-subnet-${var.primary_availability_zone}-${var.environment}"
     Tier  = "Private"
-    AZ    = var.availability_zone
+    AZ    = var.primary_availability_zone
     Usage = "Application"
   })
 }
@@ -53,13 +61,13 @@ resource "aws_subnet" "private_app" {
 resource "aws_subnet" "private_db" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.private_subnet_db_cidr
-  availability_zone       = var.availability_zone
+  availability_zone       = var.primary_availability_zone # 단일 AZ 지정
   map_public_ip_on_launch = false
 
   tags = merge(local.module_tags, {
-    Name  = "${var.project_name}-private-db-subnet-${var.availability_zone}-${var.environment}"
+    Name  = "${var.project_name}-private-db-subnet-${var.primary_availability_zone}-${var.environment}"
     Tier  = "Private"
-    AZ    = var.availability_zone
+    AZ    = var.primary_availability_zone
     Usage = "Database"
   })
 }
@@ -73,7 +81,7 @@ resource "aws_internet_gateway" "main" {
   })
 }
 
-# 4. 퍼블릭 라우트 테이블 생성 및 설정
+# 4. 퍼블릭 라우트 테이블 생성 및 설정 (모든 퍼블릭 서브넷에 동일한 라우트 테이블 연결)
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -88,11 +96,12 @@ resource "aws_route_table" "public" {
   })
 }
 
+# 생성된 모든 퍼블릭 서브넷에 위 라우트 테이블 연결
 resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+  for_each       = aws_subnet.public # aws_subnet.public이 for_each로 생성되므로, association도 for_each 사용
+  subnet_id      = each.value.id
   route_table_id = aws_route_table.public.id
 }
-
 
 # 6. 프라이빗 라우트 테이블 생성 (⚠️ 중요: 0.0.0.0/0 라우팅 규칙은 여기서 제거)
 # 6-1. 프라이빗 서브넷(App)용 라우트 테이블

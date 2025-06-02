@@ -18,10 +18,10 @@ variable "environment" {
   default     = "dev"
 }
 
-variable "availability_zone" {
-  description = "리소스를 배포할 단일 가용 영역 (예: ap-northeast-2a)"
-  type        = string
-  default     = "ap-northeast-2a"
+variable "availability_zones" {
+  description = "리소스를 배포할 가용 영역 목록 (최소 2개 권장)"
+  type        = list(string)
+  default     = ["ap-northeast-2a", "ap-northeast-2c"] # 예시: 서울 리전의 a, c 영역
 }
 
 # VPC 및 NAT Instance 모듈에서 사용할 CIDR 변수들
@@ -31,10 +31,10 @@ variable "vpc_cidr_block" {
   default     = "10.0.0.0/16" # VPC 모듈의 기본값과 동일하게 설정하거나 필요시 수정
 }
 
-variable "public_subnet_cidr" {
-  description = "퍼블릭 서브넷에 할당할 CIDR 블록"
-  type        = string
-  default     = "10.0.1.0/24" # VPC 모듈의 기본값과 동일하게 설정하거나 필요시 수정
+variable "public_subnet_cidrs" {
+  description = "각 가용 영역에 생성할 퍼블릭 서브넷 CIDR 블록 목록"
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.101.0/24"] # 예시: 2개의 CIDR 블록
 }
 
 variable "private_subnet_app_cidr" {

@@ -38,15 +38,18 @@ locals {
 module "vpc" {
   source = "./modules/vpc"
 
-  aws_region        = var.aws_region
-  project_name      = var.project_name
-  environment       = var.environment
-  common_tags       = local.common_tags
-  availability_zone = var.availability_zone
+  aws_region   = var.aws_region
+  project_name = var.project_name
+  environment  = var.environment
+  common_tags  = local.common_tags
+
+  availability_zones        = var.availability_zones    # 👈 루트의 list(string) 변수 전달
+  public_subnet_cidrs       = var.public_subnet_cidrs   # 👈 루트의 list(string) 변수 전달
+  primary_availability_zone = var.availability_zones[0] # 👈 프라이빗 서브넷용 AZ (예: 리스트의 첫 번째 AZ 사용)
 
   # 루트 variables.tf에 정의된 CIDR 값들을 명시적으로 전달
-  vpc_cidr_block          = var.vpc_cidr_block
-  public_subnet_cidr      = var.public_subnet_cidr
+  vpc_cidr_block = var.vpc_cidr_block
+
   private_subnet_app_cidr = var.private_subnet_app_cidr
   private_subnet_db_cidr  = var.private_subnet_db_cidr
 }
@@ -133,10 +136,9 @@ module "alb" {
   environment       = var.environment
   common_tags       = local.common_tags
   vpc_id            = module.vpc.vpc_id
-  public_subnet_ids = [module.vpc.public_subnet_id] # 현재 단일 퍼블릭 서브넷 사용
+  public_subnet_ids = module.vpc.public_subnet_ids # 👈 VPC 모듈의 list 출력값 전달
 
   backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
-  # backend_security_group_id = module.ec2_backend.security_group_id # 백엔드 SG ID 전달
 
   # HTTPS 사용 시 ACM 인증서 ARN 전달
   # certificate_arn           = "arn:aws:acm:ap-northeast-2:123456789012:certificate/your-cert-id"
