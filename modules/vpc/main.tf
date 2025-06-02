@@ -43,6 +43,21 @@ resource "aws_subnet" "public" {
 }
 
 # 2-2. 프라이빗 서브넷 (FastAPI 애플리케이션 서버용)
+resource "aws_subnet" "private_app" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.private_subnet_app_cidr
+  availability_zone       = var.primary_availability_zone # 단일 AZ 지정
+  map_public_ip_on_launch = false
+
+  tags = merge(local.module_tags, {
+    Name  = "${var.project_name}-private-app-subnet-${var.primary_availability_zone}-${var.environment}"
+    Tier  = "Private"
+    AZ    = var.primary_availability_zone
+    Usage = "Application"
+  })
+}
+
+# 2-3. 프라이빗 서브넷 (RDS 데이터베이스용)
 resource "aws_subnet" "private_db" {
   for_each = {
     for i, az in var.availability_zones : i => { # public 서브넷과 동일한 AZ 목록 사용
@@ -63,6 +78,7 @@ resource "aws_subnet" "private_db" {
     Usage = "Database"
   })
 }
+
 
 # 3. 인터넷 게이트웨이 (IGW) 생성 및 VPC에 연결
 resource "aws_internet_gateway" "main" {
