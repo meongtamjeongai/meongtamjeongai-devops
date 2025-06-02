@@ -10,9 +10,9 @@ output "vpc_cidr_block" {
   value       = aws_vpc.main.cidr_block
 }
 
-output "public_subnet_id" {
-  description = "생성된 퍼블릭 서브넷의 ID"
-  value       = aws_subnet.public.id
+output "public_subnet_ids" { # 👈 이름 변경 및 값 수정
+  description = "생성된 모든 퍼블릭 서브넷의 ID 목록"
+  value       = [for subnet in aws_subnet.public : subnet.id]
 }
 
 output "public_subnet_cidr_block" {

@@ -140,9 +140,6 @@ module "alb" {
 
   backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
 
-  # HTTPS 사용 시 ACM 인증서 ARN 전달
-  # certificate_arn           = "arn:aws:acm:ap-northeast-2:123456789012:certificate/your-cert-id"
-
   # ALB는 VPC 모듈에만 의존합니다.
   depends_on = [module.vpc]
 }
