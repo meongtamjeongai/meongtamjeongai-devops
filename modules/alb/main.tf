@@ -98,18 +98,31 @@ resource "aws_lb_target_group" "main" {
 }
 
 # 4. HTTP 리스너 생성
-# (HTTPS를 기본으로 사용하고 HTTP는 HTTPS로 리디렉션할 수도 있지만, 여기서는 ACM 인증서 유무에 따라 분기)
+# 이 리스너는 항상 생성됩니다.
+# - ACM 인증서가 있으면: 모든 HTTP 트래픽을 HTTPS로 리디렉션합니다.
+# - ACM 인증서가 없으면: HTTP 트래픽을 대상 그룹으로 전달합니다.
 resource "aws_lb_listener" "http" {
-  # ACM 인증서가 없거나, 있더라도 HTTP 리스너를 별도로 생성하는 경우
-  count = var.certificate_arn == null ? 1 : 0 # 인증서가 없으면 HTTP 리스너 생성
-
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.main.arn
+    # var.certificate_arn 유무에 따라 액션 유형 결정
+    type = var.certificate_arn != null ? "redirect" : "forward"
+
+    # "forward" 액션일 때만 target_group_arn 지정
+    target_group_arn = var.certificate_arn != null ? null : aws_lb_target_group.main.arn
+
+    # "redirect" 액션일 때만 redirect 블록 사용
+    dynamic "redirect" {
+      # var.certificate_arn이 제공되었을 때만 이 블록이 활성화됨
+      for_each = var.certificate_arn != null ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301" # 영구 리디렉션
+      }
+    }
   }
 }
 
