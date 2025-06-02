@@ -16,8 +16,9 @@ output "alb_arn" {
 }
 
 output "http_listener_arn" {
-  description = "HTTP 리스너의 ARN (생성된 경우)"
-  value       = length(aws_lb_listener.http) > 0 ? aws_lb_listener.http[0].arn : null
+  description = "HTTP 리스너의 ARN"
+  # 단일 리소스이므로 인덱스([0]) 없이 직접 .arn 속성 참조
+  value = aws_lb_listener.http.arn
 }
 
 output "https_listener_arn" {
