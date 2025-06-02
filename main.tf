@@ -121,7 +121,8 @@ module "ec2_backend" {
   # 🎯 ALB 대상 그룹 ARN 전달 (아래 alb 모듈 생성 후 연결)
   target_group_arns = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
 
-  depends_on = [module.nat_instance, module.vpc] # NAT과 VPC가 준비된 후 실행
+  # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
+  depends_on = [module.vpc, module.nat_instance, module.alb]
 }
 
 # ALB 모듈 호출
@@ -140,7 +141,8 @@ module "alb" {
   # HTTPS 사용 시 ACM 인증서 ARN 전달
   # certificate_arn           = "arn:aws:acm:ap-northeast-2:123456789012:certificate/your-cert-id"
 
-  depends_on = [module.ec2_backend] # 백엔드 SG가 먼저 생성되어야 함
+  # ALB는 VPC 모듈에만 의존합니다.
+  depends_on = [module.vpc]
 }
 
 # ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가
