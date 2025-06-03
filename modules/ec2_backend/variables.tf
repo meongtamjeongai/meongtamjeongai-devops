@@ -71,7 +71,7 @@ variable "health_check_type" {
 variable "asg_instance_warmup" {
   description = "인스턴스 새로 고침 시 새 인스턴스가 서비스에 투입되기 전 준비 시간 (초)"
   type        = number
-  default     = 300 # 기본값 5분. 애플리케이션 시작 시간 및 첫 번째 상태 확인 통과 시간 고려
+  default     = 60
 }
 
 variable "asg_min_healthy_percentage" {
@@ -96,7 +96,7 @@ variable "asg_refresh_checkpoint_delay" {
 variable "health_check_grace_period" {
   description = "새 인스턴스 시작 후 헬스 체크 유예 기간(초)"
   type        = number
-  default     = 300
+  default     = 60
 }
 
 # Docker 및 FastAPI 관련 변수

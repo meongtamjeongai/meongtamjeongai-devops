@@ -165,7 +165,7 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
 
       # 새 인스턴스가 시작된 후 애플리케이션이 완전히 준비되고 헬스 체크를 통과할 때까지 대기하는 시간(초).
       # 이 시간 동안에는 min_healthy_percentage 계산에 포함되지 않거나, 헬스 체크를 유예합니다.
-      instance_warmup = var.asg_instance_warmup # 예: 5분
+      instance_warmup = var.asg_instance_warmup
 
       # 새로 고침을 특정 비율에서 일시 중지하고 대기할 수 있는 체크포인트 설정 (선택 사항)
       # checkpoint_percentages = [33, 66, 100]

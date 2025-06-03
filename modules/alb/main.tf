@@ -85,9 +85,9 @@ resource "aws_lb_target_group" "main" {
     port                = var.health_check_port
     protocol            = var.health_check_protocol
     matcher             = "200-399" # HTTP 응답 코드 200-399를 정상으로 간주
-    interval            = 30
+    interval            = 10
     timeout             = 5
-    healthy_threshold   = 3
+    healthy_threshold   = 2
     unhealthy_threshold = 2
   }
 
