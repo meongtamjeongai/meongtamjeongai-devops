@@ -22,29 +22,34 @@ resource "aws_acm_certificate" "this" {
 resource "cloudflare_dns_record" "validation" {
   for_each = {
     for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
-      name = dvo.resource_record_name
-      # 'value'가 아니라 'content'로 DNS 레코드 값을 전달해야 합니다.
-      # dvo.resource_record_value는 AWS ACM이 제공하는 CNAME 값입니다.
-      record_value = dvo.resource_record_value # for_each 내부에서 사용할 임시 변수명 변경
-      type         = dvo.resource_record_type
+      # dvo.resource_record_name 은 FQDN 형태 (_xyz.example.com.)
+      # dvo.resource_record_value 는 CNAME 대상 값
+      # dvo.resource_record_type 은 "CNAME"
+      name    = dvo.resource_record_name
+      content = dvo.resource_record_value
+      type    = dvo.resource_record_type
     }
   }
 
   zone_id = var.cloudflare_zone_id
-  name    = each.value.name         # 예: _abs123.www (zone이 example.com 이면 _abs123.www.example.com)
-  content = each.value.record_value # 👈 "value" 에서 "content" 로 변경, 그리고 each.value.value 대신 each.value.record_value 사용
-  type    = each.value.type         # 예: CNAME
+  name    = each.value.name # Cloudflare provider가 zone_id 기준으로 처리 (예: _xyz.example.com. -> _xyz)
+  content = each.value.content
+  type    = each.value.type
   proxied = false
-  ttl     = 1 # DNS 전파를 위해 짧은 TTL 권장 (Cloudflare 기본값은 auto)
+  ttl     = 1
 }
 
 # ACM 인증서 검증 완료 대기
 resource "aws_acm_certificate_validation" "this" {
   certificate_arn = aws_acm_certificate.this.arn
 
+  # 👈 수정된 부분:
+  # aws_acm_certificate 리소스의 domain_validation_options 에서 직접 FQDN을 가져옵니다.
+  # 이 값들은 Cloudflare에 생성될 레코드의 이름과 정확히 일치해야 합니다.
   validation_record_fqdns = [
-    for record in cloudflare_dns_record.validation : record.hostname
+    for dvo in aws_acm_certificate.this.domain_validation_options : dvo.resource_record_name
   ]
 
+  # Cloudflare 레코드가 생성된 후 이 리소스가 평가되도록 명시적 의존성 추가
   depends_on = [cloudflare_dns_record.validation]
 }
