@@ -117,9 +117,11 @@ module "ec2_backend" {
   private_app_subnet_ids = [module.vpc.private_app_subnet_id]
   ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id
   instance_type          = "t2.micro"
-  host_app_port          = var.backend_app_port # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
 
+  aws_region           = var.aws_region
   fastapi_docker_image = var.custom_fastapi_docker_image # 👈 루트 변수 값을 모듈의 입력으로 전달
+  host_app_port        = var.backend_app_port            # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
+  fastapi_app_port     = 80                              # Dockerfile EXPOSE 및 CMD 포트와 일치하도록 설정 (또는 변수화)
 
   # 🎯 ALB 대상 그룹 ARN 전달 (아래 alb 모듈 생성 후 연결)
   target_group_arns = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨

@@ -10,6 +10,7 @@ locals {
     fastapi_docker_image_placeholder    = var.fastapi_docker_image # 👈 모듈 입력 변수(var.fastapi_docker_image)를 플레이스홀더 이름으로 매핑
     container_internal_port_placeholder = var.fastapi_app_port     # 컨테이너 내부 포트
     host_exposed_port_placeholder       = var.host_app_port        # 호스트에 노출될 포트
+    aws_region_placeholder              = var.aws_region
   }
 }
 

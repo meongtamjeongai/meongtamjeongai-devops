@@ -5,6 +5,11 @@ variable "project_name" {
   type        = string
 }
 
+variable "aws_region" {
+  description = "AWS 리전 (ECR 로그인 등에 사용)"
+  type        = string
+}
+
 variable "environment" {
   description = "배포 환경 (리소스 태깅 및 이름에 사용)"
   type        = string
