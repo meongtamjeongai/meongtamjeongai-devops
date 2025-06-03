@@ -207,11 +207,11 @@ resource "aws_ecr_repository" "fastapi_app" {
 
 # 5.1. 특정 서브도메인용 CNAME (예: www.example.com)
 resource "cloudflare_dns_record" "alb_subdomain_cname" {
-  # var.subdomain_for_alb가 비어있지 않고, 기본 조건 만족 시 생성
+  # var.subdomain_for_cert 비어있지 않고, 기본 조건 만족 시 생성
   count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null && var.subdomain_for_cert != "" ? 1 : 0
 
   zone_id = var.cloudflare_zone_id
-  name    = var.subdomain_for_alb # 예: "www"
+  name    = var.subdomain_for_cert # 예: "www"
   content = module.alb.alb_dns_name
   type    = "CNAME"
   proxied = true
