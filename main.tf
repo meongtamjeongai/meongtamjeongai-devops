@@ -200,3 +200,23 @@ resource "aws_ecr_repository" "fastapi_app" {
     Purpose = "FastAPI Application Docker Images"
   })
 }
+
+# -----------------------------------------------------------------------------
+# 5. Cloudflare DNS 레코드 생성 (ALB용 CNAME)
+# -----------------------------------------------------------------------------
+resource "cloudflare_dns_record" "alb_cname" {
+  # var.domain_name이 설정되어 있고, ALB DNS 이름이 정상적으로 출력되었을 때만 생성
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+
+  zone_id = var.cloudflare_zone_id
+  # name: Cloudflare에 등록할 레코드 이름.
+  name    = var.subdomain_for_cert != "" ? var.subdomain_for_cert : var.domain_name # 또는 "@" 사용 가능
+  value   = module.alb.alb_dns_name                                                 # ALB 모듈에서 출력된 DNS 이름
+  type    = "CNAME"
+  proxied = true # Cloudflare의 CDN 및 보호 기능을 사용하려면 true (권장)
+  ttl     = 1    # 1은 'Automatic'을 의미, 또는 원하는 TTL 값 (예: 300)
+
+  # 이 리소스는 ALB가 생성된 후에 실행되어야 합니다.
+  # module.alb.alb_dns_name을 참조하므로 암시적 의존성이 있지만, 명시적으로 추가할 수도 있습니다.
+  depends_on = [module.alb]
+}
