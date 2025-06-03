@@ -69,10 +69,6 @@ module "nat_instance" {
     var.private_db_subnet_cidrs    # DB 프라이빗 서브넷 CIDR 목록 (리스트)
   )
 
-  # nat_instance_type 등은 NAT 모듈 내 기본값 사용
-  ssh_key_name  = var.ssh_key_name
-  my_ip_for_ssh = var.my_ip_for_ssh
-
   depends_on = [module.vpc] # VPC가 먼저 생성되도록 의존성 명시
 }
 
@@ -183,8 +179,8 @@ module "rds" {
 
 resource "aws_ecr_repository" "fastapi_app" {
   name                 = "${var.project_name}-${var.environment}-fastapi-app" # 예: fastapi-infra-dev-fastapi-app
-  image_tag_mutability = "MUTABLE" # 또는 "IMMUTABLE". MUTABLE은 태그 재사용 가능, IMMUTABLE은 불가.
-                                   # 운영 환경에서는 고유 태그에 IMMUTABLE을 권장할 수 있습니다.
+  image_tag_mutability = "MUTABLE"                                            # 또는 "IMMUTABLE". MUTABLE은 태그 재사용 가능, IMMUTABLE은 불가.
+  # 운영 환경에서는 고유 태그에 IMMUTABLE을 권장할 수 있습니다.
 
   image_scanning_configuration {
     scan_on_push = true # 이미지 푸시 시 취약점 스캔 활성화

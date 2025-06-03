@@ -6,30 +6,56 @@ locals {
   })
 }
 
+# 🎯 1. NAT 인스턴스용 IAM 역할 및 인스턴스 프로파일 생성 (SSM 접근용)
+resource "aws_iam_role" "nat_instance_role" {
+  name = "${var.project_name}-nat-instance-role-${var.environment}"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+  tags = local.module_tags
+}
+
+resource "aws_iam_role_policy_attachment" "nat_ssm_policy" {
+  role       = aws_iam_role.nat_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" # SSM Agent 작동에 필요한 기본 권한
+}
+
+resource "aws_iam_instance_profile" "nat_instance_profile" {
+  name = "${var.project_name}-nat-instance-profile-${var.environment}"
+  role = aws_iam_role.nat_instance_role.name
+  tags = local.module_tags
+}
+
+# NAT 인스턴스용 최신 Amazon Linux 2 AMI 조회 (기존과 동일)
 data "aws_ami" "nat_ami" {
   most_recent = true
   owners      = [var.nat_instance_ami_owner]
-
   filter {
     name   = "name"
     values = [var.nat_instance_ami_name_filter]
   }
-
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
   }
 }
 
-# --- aws_eip 리소스 제거 ---
-# resource "aws_eip" "nat" { ... }
-# --- aws_eip 리소스 제거 ---
-
+# NAT 인스턴스용 보안 그룹
 resource "aws_security_group" "nat" {
   name        = "${var.project_name}-nat-instance-sg-${var.environment}"
-  description = "Security group for NAT instance, allowing traffic from private subnets and SSH"
+  description = "Security group for NAT instance, allowing traffic from private subnets" # 설명 업데이트
   vpc_id      = var.vpc_id
 
+  # 인바운드 규칙: 프라이빗 서브넷들로부터의 모든 트래픽 허용 (기존과 동일)
   dynamic "ingress" {
     for_each = var.private_subnet_cidrs
     content {
@@ -41,14 +67,16 @@ resource "aws_security_group" "nat" {
     }
   }
 
-  ingress {
-    description = "Allow SSH from my IP for NAT instance management"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.my_ip_for_ssh]
-  }
+  # 🎯 SSH 인바운드 규칙 제거!
+  # ingress {
+  #   description     = "Allow SSH from my IP for NAT instance management"
+  #   from_port       = 22
+  #   to_port         = 22
+  #   protocol        = "tcp"
+  #   cidr_blocks     = [var.my_ip_for_ssh]
+  # }
 
+  # 아웃바운드 규칙: 모든 외부 트래픽 허용 (기존과 동일)
   egress {
     from_port   = 0
     to_port     = 0
@@ -61,16 +89,20 @@ resource "aws_security_group" "nat" {
   })
 }
 
+# NAT EC2 인스턴스 생성
 resource "aws_instance" "nat" {
   ami           = data.aws_ami.nat_ami.id
   instance_type = var.nat_instance_type
   subnet_id     = var.public_subnet_id
-  key_name      = var.ssh_key_name
+
+  # 🎯 key_name 속성 제거 (또는 null 할당)
+  # key_name      = var.ssh_key_name
+
+  # 🎯 IAM 인스턴스 프로파일 연결
+  iam_instance_profile = aws_iam_instance_profile.nat_instance_profile.name
 
   vpc_security_group_ids = [aws_security_group.nat.id]
   source_dest_check      = false
-  # EIP를 사용하지 않으므로, 퍼블릭 서브넷의 'map_public_ip_on_launch' 설정에 따라 동적 공인 IP가 할당됩니다.
-  # associate_public_ip_address = true # 명시적으로 true로 설정할 수도 있으나, 서브넷 설정에 따르는 것이 일반적입니다.
 
   user_data = <<-EOF
               #!/bin/bash
@@ -86,7 +118,6 @@ resource "aws_instance" "nat" {
               sudo yum install -y iptables-services
               echo "iptables-services installed."
 
-              # Dynamically get the primary network interface
               PRIMARY_INTERFACE=$(ip route | grep default | sed -e "s/^.*dev \([^ ]*\).*$/\1/")
               if [ -z "$PRIMARY_INTERFACE" ]; then
                 echo "ERROR: Could not determine primary network interface."
@@ -94,17 +125,14 @@ resource "aws_instance" "nat" {
               fi
               echo "Primary network interface: $PRIMARY_INTERFACE"
 
-              # Add MASQUERADE rule for NAT
               echo "Adding MASQUERADE rule for $PRIMARY_INTERFACE..."
               sudo iptables -t nat -A POSTROUTING -o $PRIMARY_INTERFACE -j MASQUERADE
               echo "MASQUERADE rule added."
 
-              # Save the iptables rules
               echo "Saving iptables rules..."
               sudo iptables-save | sudo tee /etc/sysconfig/iptables
               echo "iptables rules saved."
 
-              # Enable and start iptables service
               echo "Enabling and starting iptables service..."
               sudo systemctl enable iptables
               sudo systemctl start iptables
@@ -112,13 +140,9 @@ resource "aws_instance" "nat" {
               echo "NAT configuration completed."
               EOF
 
-  user_data_replace_on_change = true # user_data 변경 시 인스턴스를 교체하도록 설정 (iptables 업데이트 등)
+  user_data_replace_on_change = true
 
   tags = merge(local.module_tags, {
     Name = "${var.project_name}-nat-instance-${var.environment}"
   })
 }
-
-# --- aws_eip_association 리소스 제거 ---
-# resource "aws_eip_association" "nat" { ... }
-# --- aws_eip_association 리소스 제거 ---

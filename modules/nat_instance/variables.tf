@@ -49,15 +49,3 @@ variable "nat_instance_ami_name_filter" {
   type        = string
   default     = "amzn2-ami-hvm-*-x86_64-gp2"
 }
-
-variable "ssh_key_name" {
-  description = "NAT 인스턴스에 연결할 EC2 키 페어 이름 (선택 사항)"
-  type        = string
-  default     = "meongtamjeongai" # 필요시 AWS에 생성된 키 페어 이름을 입력하세요.
-}
-
-variable "my_ip_for_ssh" {
-  description = "NAT 인스턴스 SSH 접근을 허용할 나의 IP 주소 (CIDR 형태, 예: 123.123.123.123/32)"
-  type        = string
-  default     = "0.0.0.0/0" # ☢️ 보안 경고: 운영 환경에서는 실제 IP로 반드시 변경하세요!
-}
