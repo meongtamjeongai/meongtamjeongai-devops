@@ -111,7 +111,8 @@ module "alb" {
 
   backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
 
-  certificate_arn = module.acm.validated_certificate_arn # 검증 완료된 인증서 ARN 사용
+  create_https_listener = var.domain_name != "" && var.cloudflare_zone_id != ""
+  certificate_arn       = module.acm.validated_certificate_arn
 
   # ALB는 VPC 모듈과 ACM 모듈(인증서)에 의존합니다.
   depends_on = [module.vpc, module.acm]

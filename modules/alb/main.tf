@@ -128,30 +128,18 @@ resource "aws_lb_listener" "http" {
 
 # 5. HTTPS 리스너 생성 (ACM 인증서가 제공된 경우)
 resource "aws_lb_listener" "https" {
-  # count = var.certificate_arn != null ? 1 : 0 # 👈 이전 방식 주석 처리 또는 삭제
-  for_each = var.certificate_arn != null ? { "main_https_listener" = var.certificate_arn } : {} # 👈 for_each 사용
+  # var.create_https_listener는 루트에서 domain_name 존재 여부 등으로 결정
+  count = var.create_https_listener ? 1 : 0
 
   load_balancer_arn = aws_lb.main.arn
   port              = 443
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08" # 권장 보안 정책
-  # certificate_arn   = var.certificate_arn         # 👈 for_each의 value를 사용하거나, var.certificate_arn 직접 사용 가능
-  certificate_arn = each.value # for_each 맵의 value (var.certificate_arn)를 사용
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  # certificate_arn은 count가 1일 때 유효한 값이 전달될 것으로 기대
+  certificate_arn = var.certificate_arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.main.arn
   }
 }
-
-# 만약 HTTP로 접속 시 HTTPS로 자동 리디렉션하고 싶다면,
-# aws_lb_listener.http 리소스의 default_action을 다음과 같이 수정할 수 있습니다:
-# (단, 이 경우 aws_lb_listener.https 리소스가 반드시 존재해야 함)
-# default_action {
-#   type = "redirect"
-#   redirect {
-#     port        = "443"
-#     protocol    = "HTTPS"
-#     status_code = "HTTP_301"
-#   }
-# }

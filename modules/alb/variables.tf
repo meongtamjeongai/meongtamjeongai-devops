@@ -58,6 +58,12 @@ variable "health_check_protocol" {
   default     = "HTTP"
 }
 
+variable "create_https_listener" {
+  description = "Flag to determine if the HTTPS listener should be created. Set to false if no certificate_arn is provided or HTTPS is not needed."
+  type        = bool
+  default     = true # 기본적으로 생성 시도, 루트에서 제어
+}
+
 variable "certificate_arn" {
   description = "HTTPS 리스너에 사용할 ACM 인증서 ARN (제공되지 않으면 HTTP 리스너만 생성)"
   type        = string
