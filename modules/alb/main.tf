@@ -107,20 +107,20 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    # var.certificate_arn 유무에 따라 액션 유형 결정
-    type = var.certificate_arn != null ? "redirect" : "forward"
+    // create_https_listener 값에 따라 type과 target_group_arn 결정
+    type = var.create_https_listener ? "redirect" : "forward"
 
-    # "forward" 액션일 때만 target_group_arn 지정
-    target_group_arn = var.certificate_arn != null ? null : aws_lb_target_group.main.arn
+    // create_https_listener가 true (리디렉션) 이면 target_group_arn은 null
+    // false (포워드) 이면 target_group_arn 설정
+    target_group_arn = var.create_https_listener ? null : aws_lb_target_group.main.arn
 
-    # "redirect" 액션일 때만 redirect 블록 사용
+    // create_https_listener가 true일 때만 redirect 블록 내용이 포함됨
     dynamic "redirect" {
-      # var.certificate_arn이 제공되었을 때만 이 블록이 활성화됨
-      for_each = var.certificate_arn != null ? [1] : []
+      for_each = var.create_https_listener ? { "https_redirect" = true } : {}
       content {
         port        = "443"
         protocol    = "HTTPS"
-        status_code = "HTTP_301" # 영구 리디렉션
+        status_code = "HTTP_301"
       }
     }
   }
