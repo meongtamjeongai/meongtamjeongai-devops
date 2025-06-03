@@ -1,40 +1,13 @@
 # terraform-aws-fastapi-infra/main.tf
+#
+# 이 파일은 전체 인프라 스택의 주 진입점 역할을 합니다.
+# 다양한 모듈을 호출하고, 각 모듈 간의 의존성을 연결합니다.
 
-terraform {
-  required_version = ">= 1.12.0" # Terraform 최소 권장 버전
+# -----------------------------------------------------------------------------
+# 1. VPC 및 네트워크 인프라 (VPC, 서브넷, 라우팅 테이블, NAT 인스턴스)
+# -----------------------------------------------------------------------------
 
-  # Terraform Cloud 연동 설정
-  # VCS 기반 워크플로우에서는 이 블록이 없어도 TFC가 자동으로 workspace와 연결하지만,
-  # 명시적으로 선언해두면 로컬에서 `terraform init` 시 혼동을 줄일 수 있습니다.
-  cloud {
-    organization = "meongtamjeongai"
-    workspaces {
-      name = "meongtamjeongai-devops"
-    }
-  }
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-
-locals {
-  common_tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    CreatedAt   = timestamp()
-  }
-}
-
-# VPC 모듈 호출
+# VPC 모듈 호출: 네트워크의 기반을 정의합니다.
 module "vpc" {
   source = "./modules/vpc"
 
@@ -50,11 +23,10 @@ module "vpc" {
   # 루트 variables.tf에 정의된 CIDR 값들을 명시적으로 전달
   vpc_cidr_block          = var.vpc_cidr_block
   private_subnet_app_cidr = var.private_subnet_app_cidr
-
   private_db_subnet_cidrs = var.private_db_subnet_cidrs
 }
 
-# NAT 인스턴스 모듈 호출
+# NAT 인스턴스 모듈 호출: 프라이빗 서브넷의 아웃바운드 인터넷 액세스를 제공합니다.
 module "nat_instance" {
   source = "./modules/nat_instance"
 
@@ -72,7 +44,8 @@ module "nat_instance" {
   depends_on = [module.vpc] # VPC가 먼저 생성되도록 의존성 명시
 }
 
-# 프라이빗 라우트 테이블에 NAT 인스턴스로 향하는 라우팅 규칙 추가
+# 프라이빗 라우트 테이블에 NAT 인스턴스로 향하는 라우팅 규칙 추가:
+# 앱 및 DB 프라이빗 서브넷에서 외부로 나가는 트래픽을 NAT 인스턴스로 라우팅합니다.
 resource "aws_route" "private_app_subnet_to_nat" {
   route_table_id         = module.vpc.private_app_route_table_id            # VPC 모듈 출력: 앱 라우트 테이블 ID
   destination_cidr_block = "0.0.0.0/0"                                      # 모든 외부 트래픽
@@ -90,7 +63,11 @@ resource "aws_route" "private_db_subnet_to_nat" {
   depends_on = [module.nat_instance]
 }
 
-# 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2)
+# -----------------------------------------------------------------------------
+# 2. 애플리케이션 및 로드 밸런싱 (ALB, EC2 백엔드)
+# -----------------------------------------------------------------------------
+
+# 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2): EC2 인스턴스에 사용될 AMI를 찾습니다.
 data "aws_ami" "amazon_linux_2_for_backend" {
   most_recent = true
   owners      = ["amazon"] # Amazon 제공 AMI
@@ -106,7 +83,23 @@ data "aws_ami" "amazon_linux_2_for_backend" {
   }
 }
 
-# EC2 백엔드 모듈 호출
+# ALB 모듈 호출: 애플리케이션 트래픽을 EC2 인스턴스로 분산합니다.
+module "alb" {
+  source = "./modules/alb"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  common_tags       = local.common_tags
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = module.vpc.public_subnet_ids # 👈 VPC 모듈의 list 출력값 전달
+
+  backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
+
+  # ALB는 VPC 모듈에만 의존합니다.
+  depends_on = [module.vpc]
+}
+
+# EC2 백엔드 모듈 호출: FastAPI 애플리케이션을 호스팅하는 EC2 인스턴스 및 ASG를 구성합니다.
 module "ec2_backend" {
   source = "./modules/ec2_backend"
 
@@ -123,35 +116,19 @@ module "ec2_backend" {
   host_app_port        = var.backend_app_port            # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
   fastapi_app_port     = 80                              # Dockerfile EXPOSE 및 CMD 포트와 일치하도록 설정 (또는 변수화)
 
-  # 🎯 ALB 대상 그룹 ARN 전달 (아래 alb 모듈 생성 후 연결)
-  target_group_arns = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
-
-  health_check_type          = "ELB" # 명시적으로 ELB 사용
-  health_check_grace_period  = 60    # ASG 헬스 체크 유예
-  asg_instance_warmup        = 30    # 인스턴스 새로 고침 시 준비 시간
-  asg_min_healthy_percentage = 100   # 최소 정상 인스턴스 유지
+  # 🎯 ALB 대상 그룹 ARN 전달
+  target_group_arns          = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
+  health_check_type          = "ELB"                         # 명시적으로 ELB 사용
+  health_check_grace_period  = 60                            # ASG 헬스 체크 유예
+  asg_instance_warmup        = 30                            # 인스턴스 새로 고침 시 준비 시간
+  asg_min_healthy_percentage = 100                           # 최소 정상 인스턴스 유지
 
   # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
   depends_on = [module.vpc, module.nat_instance, module.alb]
 }
 
-# ALB 모듈 호출
-module "alb" {
-  source = "./modules/alb"
-
-  project_name      = var.project_name
-  environment       = var.environment
-  common_tags       = local.common_tags
-  vpc_id            = module.vpc.vpc_id
-  public_subnet_ids = module.vpc.public_subnet_ids # 👈 VPC 모듈의 list 출력값 전달
-
-  backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
-
-  # ALB는 VPC 모듈에만 의존합니다.
-  depends_on = [module.vpc]
-}
-
-# ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가
+# ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가:
+# ALB와 EC2 인스턴스 간의 통신을 허용합니다.
 resource "aws_security_group_rule" "allow_alb_to_backend" {
   type                     = "ingress"
   description              = "Allow traffic from ALB to backend EC2 instances on app port"
@@ -165,7 +142,11 @@ resource "aws_security_group_rule" "allow_alb_to_backend" {
   depends_on = [module.alb, module.ec2_backend]
 }
 
-# RDS 모듈 호출
+# -----------------------------------------------------------------------------
+# 3. 데이터베이스 (RDS)
+# -----------------------------------------------------------------------------
+
+# RDS 모듈 호출: 데이터베이스 인스턴스를 구성합니다.
 module "rds" {
   source = "./modules/rds" # ./modules/rds 디렉토리 참조
 
@@ -182,6 +163,11 @@ module "rds" {
   depends_on = [module.vpc, module.ec2_backend]
 }
 
+# -----------------------------------------------------------------------------
+# 4. 기타 서비스 (ECR)
+# -----------------------------------------------------------------------------
+
+# ECR 레포지토리 생성: FastAPI 애플리케이션의 Docker 이미지를 저장합니다.
 resource "aws_ecr_repository" "fastapi_app" {
   name                 = "${var.project_name}-${var.environment}-fastapi-app" # 예: fastapi-infra-dev-fastapi-app
   image_tag_mutability = "MUTABLE"                                            # 또는 "IMMUTABLE". MUTABLE은 태그 재사용 가능, IMMUTABLE은 불가.
