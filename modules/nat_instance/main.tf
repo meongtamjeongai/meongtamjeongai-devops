@@ -67,15 +67,6 @@ resource "aws_security_group" "nat" {
     }
   }
 
-  # 🎯 SSH 인바운드 규칙 제거!
-  # ingress {
-  #   description     = "Allow SSH from my IP for NAT instance management"
-  #   from_port       = 22
-  #   to_port         = 22
-  #   protocol        = "tcp"
-  #   cidr_blocks     = [var.my_ip_for_ssh]
-  # }
-
   # 아웃바운드 규칙: 모든 외부 트래픽 허용 (기존과 동일)
   egress {
     from_port   = 0
