@@ -32,6 +32,12 @@ resource "aws_iam_role" "ec2_backend_role" {
   tags = local.module_tags
 }
 
+# 🎯 ECR 읽기 전용 권한 정책 연결 추가
+resource "aws_iam_role_policy_attachment" "ec2_backend_ecr_ro" {
+  role       = aws_iam_role.ec2_backend_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 # EC2 인스턴스에 SSM 접근 및 CloudWatch Logs 기본 권한을 위한 정책 연결 (선택 사항)
 resource "aws_iam_role_policy_attachment" "ssm_policy" {
   role       = aws_iam_role.ec2_backend_role.name
