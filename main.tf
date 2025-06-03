@@ -211,7 +211,7 @@ resource "cloudflare_dns_record" "alb_cname" {
   zone_id = var.cloudflare_zone_id
   # name: Cloudflare에 등록할 레코드 이름.
   name    = var.subdomain_for_cert != "" ? var.subdomain_for_cert : var.domain_name # 또는 "@" 사용 가능
-  value   = module.alb.alb_dns_name                                                 # ALB 모듈에서 출력된 DNS 이름
+  content = module.alb.alb_dns_name                                                 # ALB 모듈에서 출력된 DNS 이름
   type    = "CNAME"
   proxied = true # Cloudflare의 CDN 및 보호 기능을 사용하려면 true (권장)
   ttl     = 1    # 1은 'Automatic'을 의미, 또는 원하는 TTL 값 (예: 300)
