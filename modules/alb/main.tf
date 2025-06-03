@@ -128,13 +128,15 @@ resource "aws_lb_listener" "http" {
 
 # 5. HTTPS 리스너 생성 (ACM 인증서가 제공된 경우)
 resource "aws_lb_listener" "https" {
-  count = var.certificate_arn != null ? 1 : 0 # 인증서가 있을 때만 HTTPS 리스너 생성
+  # count = var.certificate_arn != null ? 1 : 0 # 👈 이전 방식 주석 처리 또는 삭제
+  for_each = var.certificate_arn != null ? { "main_https_listener" = var.certificate_arn } : {} # 👈 for_each 사용
 
   load_balancer_arn = aws_lb.main.arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08" # 권장 보안 정책
-  certificate_arn   = var.certificate_arn         # ACM 인증서 ARN
+  # certificate_arn   = var.certificate_arn         # 👈 for_each의 value를 사용하거나, var.certificate_arn 직접 사용 가능
+  certificate_arn = each.value # for_each 맵의 value (var.certificate_arn)를 사용
 
   default_action {
     type             = "forward"
