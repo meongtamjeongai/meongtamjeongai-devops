@@ -4,6 +4,22 @@
 # 다양한 모듈을 호출하고, 각 모듈 간의 의존성을 연결합니다.
 
 # -----------------------------------------------------------------------------
+# 0. ACM 인증서 생성 (Cloudflare DNS 검증)
+# -----------------------------------------------------------------------------
+module "acm" {
+  source = "./modules/acm"
+
+  project_name = var.project_name
+  environment  = var.environment
+  common_tags  = local.common_tags
+
+  domain_name               = var.domain_name                                                                      # 예: "mydomain.com"
+  subject_alternative_names = var.subdomain_for_cert != "" ? ["${var.subdomain_for_cert}.${var.domain_name}"] : [] # 예: ["www.mydomain.com"]
+  # 만약 여러 SAN이 필요하면, subject_alternative_names = ["www.${var.domain_name}", "api.${var.domain_name}"] 와 같이 리스트로 구성
+  cloudflare_zone_id = var.cloudflare_zone_id
+}
+
+# -----------------------------------------------------------------------------
 # 1. VPC 및 네트워크 인프라 (VPC, 서브넷, 라우팅 테이블, NAT 인스턴스)
 # -----------------------------------------------------------------------------
 
@@ -95,8 +111,10 @@ module "alb" {
 
   backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
 
-  # ALB는 VPC 모듈에만 의존합니다.
-  depends_on = [module.vpc]
+  certificate_arn = module.acm.validated_certificate_arn # 검증 완료된 인증서 ARN 사용
+
+  # ALB는 VPC 모듈과 ACM 모듈(인증서)에 의존합니다.
+  depends_on = [module.vpc, module.acm]
 }
 
 # EC2 백엔드 모듈 호출: FastAPI 애플리케이션을 호스팅하는 EC2 인스턴스 및 ASG를 구성합니다.

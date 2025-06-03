@@ -61,5 +61,5 @@ variable "health_check_protocol" {
 variable "certificate_arn" {
   description = "HTTPS 리스너에 사용할 ACM 인증서 ARN (제공되지 않으면 HTTP 리스너만 생성)"
   type        = string
-  default     = "arn:aws:acm:ap-northeast-2:314129306324:certificate/723d505b-7757-49c0-821f-930e50d04eb4"
+  default     = null
 }

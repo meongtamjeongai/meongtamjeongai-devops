@@ -70,3 +70,21 @@ variable "db_password" {
   # 이 값은 Terraform Cloud 변수(민감) 또는 AWS Secrets Manager를 통해 관리하는 것이 가장 좋습니다.
   # 루트 모듈에서 값을 전달받아야 합니다.
 }
+
+variable "domain_name" {
+  description = "The primary domain name for which the SSL certificate will be issued (e.g., 'example.com'). This will also be used as the Cloudflare zone name if not overridden."
+  type        = string
+  # 이 값은 Terraform Cloud 변수를 통해 주입됩니다.
+}
+
+variable "subdomain_for_cert" {
+  description = "Optional subdomain to include in the certificate as a Subject Alternative Name (e.g., 'www', 'api'). If empty, only the primary_domain_name is used."
+  type        = string
+  default     = "www" # 기본적으로 www.domain_name 을 SAN으로 포함
+}
+
+variable "cloudflare_zone_id" {
+  description = "The Cloudflare Zone ID corresponding to your domain_name. This is required for DNS validation of the ACM certificate."
+  type        = string
+  # 이 값은 Terraform Cloud 변수(민감 정보일 수 있음)를 통해 주입됩니다.
+}

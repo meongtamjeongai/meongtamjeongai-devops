@@ -102,3 +102,8 @@ output "ecr_repository_url" {
   description = "생성된 Amazon ECR 리포지토리의 URL"
   value       = aws_ecr_repository.fastapi_app.repository_url
 }
+
+output "acm_certificate_arn_validated" {
+  description = "The ARN of the validated ACM certificate used for the ALB."
+  value       = module.acm.validated_certificate_arn
+}
