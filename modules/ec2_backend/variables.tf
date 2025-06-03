@@ -71,7 +71,7 @@ variable "health_check_type" {
 variable "asg_instance_warmup" {
   description = "인스턴스 새로 고침 시 새 인스턴스가 서비스에 투입되기 전 준비 시간 (초)"
   type        = number
-  default     = 60
+  default     = 30
 }
 
 variable "asg_min_healthy_percentage" {

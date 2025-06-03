@@ -181,7 +181,7 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
     # 예를 들어, ASG의 특정 태그 값이 변경될 때 새로고침을 강제할 수 있습니다.
     # triggers = ["tag"] # 예시: 태그 변경 시 새로고침 (이 경우 관련 태그도 관리해야 함)
     # 현재는 launch_template의 version 변경을 주된 트리거로 간주합니다.
-    triggers = ["launch_template"]
+    # triggers = ["launch_template"] 기본값이므로 굳이 명시적으로 설정할 필요는 없습니다.
   }
 
   # ASG가 생성하는 인스턴스에 자동으로 태그 전파
