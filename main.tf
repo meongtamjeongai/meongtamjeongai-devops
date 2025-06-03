@@ -117,8 +117,6 @@ module "ec2_backend" {
   private_app_subnet_ids = [module.vpc.private_app_subnet_id]
   ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id
   instance_type          = "t2.micro"
-  ssh_key_name           = var.ssh_key_name
-  my_ip_for_ssh          = var.my_ip_for_ssh
   host_app_port          = var.backend_app_port # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
 
   fastapi_docker_image = var.custom_fastapi_docker_image # 👈 루트 변수 값을 모듈의 입력으로 전달

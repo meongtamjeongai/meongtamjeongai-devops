@@ -67,17 +67,6 @@ resource "aws_security_group" "ec2_backend_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # SSH 접근 허용 (디버깅용, var.ssh_key_name이 제공된 경우)
-  dynamic "ingress" {
-    for_each = var.ssh_key_name != null ? [1] : []
-    content {
-      description = "Allow SSH from my IP for debugging"
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = [var.my_ip_for_ssh] # 루트에서 전달받은 my_ip_for_ssh 사용
-    }
-  }
 
   # 아웃바운드 규칙: 모든 외부 트래픽 허용 (NAT 인스턴스를 통해 인터넷 접근)
   egress {
@@ -95,7 +84,6 @@ resource "aws_launch_template" "ec2_backend_lt" {
   name_prefix   = "${var.project_name}-backend-lt-${var.environment}-"
   image_id      = var.ami_id
   instance_type = var.instance_type
-  key_name      = var.ssh_key_name # var.ssh_key_name이 null이면 무시됨
 
   iam_instance_profile {
     arn = aws_iam_instance_profile.ec2_backend_profile.arn

@@ -86,9 +86,6 @@ resource "aws_instance" "nat" {
   instance_type = var.nat_instance_type
   subnet_id     = var.public_subnet_id
 
-  # 🎯 key_name 속성 제거 (또는 null 할당)
-  # key_name      = var.ssh_key_name
-
   # 🎯 IAM 인스턴스 프로파일 연결
   iam_instance_profile = aws_iam_instance_profile.nat_instance_profile.name
 

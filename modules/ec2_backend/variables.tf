@@ -38,12 +38,6 @@ variable "ami_id" {
   # 이 값은 루트 모듈에서 data.aws_ami를 통해 동적으로 가져와 전달하는 것이 좋습니다.
 }
 
-variable "ssh_key_name" {
-  description = "EC2 인스턴스에 연결할 키 페어 이름 (선택 사항, 디버깅용)"
-  type        = string
-  default     = "meongtamjeongai"
-}
-
 # Auto Scaling Group (ASG) 관련 변수
 variable "asg_min_size" {
   description = "ASG의 최소 인스턴스 수"

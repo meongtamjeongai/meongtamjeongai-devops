@@ -56,17 +56,6 @@ variable "private_db_subnet_cidrs" { # 👈 리스트 형태로 변경 또는 �
 }
 
 # NAT 인스턴스 접속용 변수
-variable "ssh_key_name" {
-  description = "NAT 인스턴스에 연결할 EC2 키 페어 이름 (선택 사항, 없으면 null)"
-  type        = string
-  default     = "meongtamjeongai"
-}
-
-variable "my_ip_for_ssh" {
-  description = "NAT 인스턴스 SSH 접근을 허용할 나의 IP 주소 (CIDR 형태)"
-  type        = string
-  default     = "0.0.0.0/0" # ☢️ 보안 경고: 실제 IP로 반드시 변경하세요!
-}
 
 variable "backend_app_port" {
   description = "백엔드 애플리케이션이 EC2 인스턴스에서 사용하는 포트"
