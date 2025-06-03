@@ -126,6 +126,11 @@ module "ec2_backend" {
   # 🎯 ALB 대상 그룹 ARN 전달 (아래 alb 모듈 생성 후 연결)
   target_group_arns = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
 
+  health_check_type          = "ELB" # 명시적으로 ELB 사용
+  health_check_grace_period  = 300   # ASG 헬스 체크 유예
+  asg_instance_warmup        = 300   # 인스턴스 새로 고침 시 준비 시간
+  asg_min_healthy_percentage = 100    # 최소 정상 인스턴스 유지
+
   # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
   depends_on = [module.vpc, module.nat_instance, module.alb]
 }

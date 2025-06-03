@@ -161,11 +161,11 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
       # 새로 고침 중 유지해야 할 최소 정상 인스턴스 비율.
       # 예: 100%로 설정하면, 새 인스턴스가 정상화된 후 이전 인스턴스를 종료 (더 안전하지만 느림)
       # 예: 90%로 설정하면, 전체 용량의 10%까지만 동시에 교체 진행 가능
-      min_healthy_percentage = 90
+      min_healthy_percentage = var.asg_min_healthy_percentage
 
       # 새 인스턴스가 시작된 후 애플리케이션이 완전히 준비되고 헬스 체크를 통과할 때까지 대기하는 시간(초).
       # 이 시간 동안에는 min_healthy_percentage 계산에 포함되지 않거나, 헬스 체크를 유예합니다.
-      instance_warmup = 300 # 예: 5분
+      instance_warmup = var.asg_instance_warmup # 예: 5분
 
       # 새로 고침을 특정 비율에서 일시 중지하고 대기할 수 있는 체크포인트 설정 (선택 사항)
       # checkpoint_percentages = [33, 66, 100]
@@ -181,6 +181,7 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
     # 예를 들어, ASG의 특정 태그 값이 변경될 때 새로고침을 강제할 수 있습니다.
     # triggers = ["tag"] # 예시: 태그 변경 시 새로고침 (이 경우 관련 태그도 관리해야 함)
     # 현재는 launch_template의 version 변경을 주된 트리거로 간주합니다.
+    triggers = ["launch_template"]
   }
 
   # ASG가 생성하는 인스턴스에 자동으로 태그 전파

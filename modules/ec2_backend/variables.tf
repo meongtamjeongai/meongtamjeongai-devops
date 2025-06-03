@@ -65,7 +65,32 @@ variable "asg_desired_capacity" {
 variable "health_check_type" {
   description = "ASG 헬스 체크 유형 (EC2 또는 ELB)"
   type        = string
-  default     = "EC2" # ALB 연동 전까지는 EC2
+  default     = "ELB"
+}
+
+variable "asg_instance_warmup" {
+  description = "인스턴스 새로 고침 시 새 인스턴스가 서비스에 투입되기 전 준비 시간 (초)"
+  type        = number
+  default     = 300 # 기본값 5분. 애플리케이션 시작 시간 및 첫 번째 상태 확인 통과 시간 고려
+}
+
+variable "asg_min_healthy_percentage" {
+  description = "인스턴스 새로 고침 중 유지되어야 하는 최소 정상 인스턴스 비율 (%)"
+  type        = number
+  default     = 90 # 예: 90%. 가용성을 위해 적절히 조절
+}
+
+# (선택 사항) 인스턴스 새로 고침 체크포인트 관련 변수 (기본값은 null로 사용 안 함)
+variable "asg_refresh_checkpoint_percentages" {
+  description = "인스턴스 새로 고침을 일시 중지할 체크포인트 비율 목록 (예: [30, 60, 100])"
+  type        = list(number)
+  default     = null
+}
+
+variable "asg_refresh_checkpoint_delay" {
+  description = "각 체크포인트에서 대기할 시간 (ISO 8601 기간 형식, 예: PT5M = 5분)"
+  type        = string
+  default     = null
 }
 
 variable "health_check_grace_period" {
