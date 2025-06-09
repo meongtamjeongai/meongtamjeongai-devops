@@ -211,8 +211,9 @@ resource "aws_ecr_repository" "fastapi_app" {
 # 5.1. 특정 서브도메인용 CNAME (예: www.example.com)
 resource "cloudflare_dns_record" "alb_subdomain_cname" {
   # var.subdomain_for_cert 비어있지 않고, 기본 조건 만족 시 생성
-  count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null && var.subdomain_for_cert != "" ? 1 : 0
-
+  #count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null && var.subdomain_for_cert != "" ? 1 : 0
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" && var.subdomain_for_cert != "" ? 1 : 0
+  
   zone_id = var.cloudflare_zone_id
   name    = var.subdomain_for_cert # 예: "www"
   content = module.alb.alb_dns_name
@@ -224,7 +225,8 @@ resource "cloudflare_dns_record" "alb_subdomain_cname" {
 # 5.2. 루트 도메인용 CNAME (예: example.com)
 resource "cloudflare_dns_record" "alb_root_cname" {
   # 기본 조건 만족 시 생성
-  count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+  #count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" ? 1 : 0
 
   zone_id = var.cloudflare_zone_id
   name    = var.domain_name # Cloudflare에서는 루트 도메인을 나타낼 때 실제 도메인 이름 또는 "@" 사용 가능
@@ -238,7 +240,8 @@ resource "cloudflare_dns_record" "alb_root_cname" {
 # 5.3. 와일드카드 서브도메인용 CNAME (예: *.example.com)
 resource "cloudflare_dns_record" "alb_wildcard_cname" {
   # 기본 조건 만족 시 생성
-  count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+  # count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" ? 1 : 0
 
   zone_id = var.cloudflare_zone_id
   name    = "*" # 와일드카드
