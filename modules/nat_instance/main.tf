@@ -29,6 +29,11 @@ resource "aws_iam_role_policy_attachment" "nat_ssm_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" # SSM Agent 작동에 필요한 기본 권한
 }
 
+resource "aws_iam_role_policy_attachment" "nat_ecr_ro_policy" {
+  role       = aws_iam_role.nat_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_instance_profile" "nat_instance_profile" {
   name = "${var.project_name}-nat-instance-profile-${var.environment}"
   role = aws_iam_role.nat_instance_role.name
@@ -67,6 +72,15 @@ resource "aws_security_group" "nat" {
     }
   }
 
+  # 🎯 추가: 관리자 앱 포트로의 인바운드 규칙
+  ingress {
+    description     = "Allow access to Admin App from specified IPs"
+    from_port       = var.admin_app_port
+    to_port         = var.admin_app_port
+    protocol        = "tcp"
+    cidr_blocks     = var.admin_app_source_cidrs
+  }
+  
   # 아웃바운드 규칙: 모든 외부 트래픽 허용 (기존과 동일)
   egress {
     from_port   = 0
@@ -125,6 +139,16 @@ resource "aws_instance" "nat" {
               sudo systemctl enable iptables
               sudo systemctl start iptables
               echo "iptables service enabled and started."
+
+              # Docker 설치 및 활성화 (관리자 앱 실행용)
+              echo "Installing Docker..."
+              sudo yum update -y -q
+              sudo amazon-linux-extras install docker -y -q
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -a -G docker ec2-user
+              echo "Docker installed and started."
+
               echo "NAT configuration completed."
               EOF
 

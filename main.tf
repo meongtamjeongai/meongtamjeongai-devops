@@ -57,6 +57,9 @@ module "nat_instance" {
     var.private_db_subnet_cidrs    # DB 프라이빗 서브넷 CIDR 목록 (리스트)
   )
 
+  # admin_app_port         = 8080 # 또는 var.admin_app_port 등으로 관리
+  # admin_app_source_cidrs = ["YOUR_OFFICE_IP/32", "YOUR_HOME_IP/32"] # 예시: 사무실 및 집 IP만 허용
+ 
   depends_on = [module.vpc] # VPC가 먼저 생성되도록 의존성 명시
 }
 
