@@ -145,6 +145,10 @@ module "ec2_backend" {
   asg_instance_warmup        = 30                            # 인스턴스 새로 고침 시 준비 시간
   asg_min_healthy_percentage = 100                           # 최소 정상 인스턴스 유지
 
+  fastapi_database_url = "postgresql://${module.rds.db_instance_username}:${var.db_password}@${module.rds.db_instance_endpoint}/${module.rds.db_instance_name}"
+  fastapi_secret_key   = var.fastapi_secret_key
+  firebase_b64_json    = var.firebase_b64_json
+
   # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
   depends_on = [module.vpc, module.nat_instance, module.alb]
 }

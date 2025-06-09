@@ -11,6 +11,10 @@ locals {
     container_internal_port_placeholder = var.fastapi_app_port     # 컨테이너 내부 포트
     host_exposed_port_placeholder       = var.host_app_port        # 호스트에 노출될 포트
     aws_region_placeholder              = var.aws_region
+
+    database_url_placeholder      = var.fastapi_database_url
+    secret_key_placeholder        = var.fastapi_secret_key
+    firebase_b64_json_placeholder = var.firebase_b64_json
   }
 }
 

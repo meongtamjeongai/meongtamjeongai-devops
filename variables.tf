@@ -64,11 +64,21 @@ variable "backend_app_port" {
 }
 
 variable "db_password" {
-  description = "데이터베이스 마스터 사용자 암호 (매우 민감한 정보!)"
+  description = "데이터베이스 마스터 사용자 암호"
   type        = string
-  sensitive   = true # Terraform 출력에 표시되지 않도록 함
-  # 이 값은 Terraform Cloud 변수(민감) 또는 AWS Secrets Manager를 통해 관리하는 것이 가장 좋습니다.
-  # 루트 모듈에서 값을 전달받아야 합니다.
+  sensitive   = true
+}
+
+variable "fastapi_secret_key" {
+  description = "FastAPI 애플리케이션의 JWT 시크릿 키"
+  type        = string
+  sensitive   = true
+}
+
+variable "firebase_b64_json" {
+  description = "Base64로 인코딩된 Firebase 서비스 계정 JSON"
+  type        = string
+  sensitive   = true
 }
 
 variable "domain_name" {

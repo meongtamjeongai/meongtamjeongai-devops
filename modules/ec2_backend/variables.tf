@@ -134,3 +134,21 @@ variable "backend_app_port" {
   type        = number
   default     = 80 # ec2_backend 모듈의 user_data.sh 에서 호스트의 80 포트로 매핑했음
 }
+
+variable "fastapi_database_url" {
+  description = "FastAPI가 사용할 전체 DATABASE_URL"
+  type        = string
+  sensitive   = true # DB 연결 정보는 민감 정보이므로 출력에 노출되지 않도록 함
+}
+
+variable "fastapi_secret_key" {
+  description = "FastAPI 애플리케이션의 JWT 시크릿 키"
+  type        = string
+  sensitive   = true # 시크릿 키는 민감 정보
+}
+
+variable "firebase_b64_json" {
+  description = "Base64로 인코딩된 Firebase 서비스 계정 JSON"
+  type        = string
+  sensitive   = true # 서비스 계정 키는 민감 정보
+}
