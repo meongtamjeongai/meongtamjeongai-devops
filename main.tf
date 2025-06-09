@@ -150,7 +150,7 @@ module "ec2_backend" {
   firebase_b64_json    = var.firebase_b64_json
 
   # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
-  depends_on = [module.vpc, module.nat_instance, module.alb]
+  depends_on = [module.vpc, module.nat_instance, module.alb, module.rds]
 }
 
 # ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가:
@@ -184,8 +184,7 @@ module "rds" {
   db_subnet_ids = module.vpc.private_db_subnet_ids # VPC 모듈 출력값 (현재 단일 DB 서브넷)
   db_password   = var.db_password                  # 루트 variables.tf (Terraform Cloud에서 주입)
 
-  # 의존성: VPC 모듈(서브넷 ID, VPC ID)과 EC2 백엔드 모듈(보안 그룹 ID)이 완료된 후 실행
-  depends_on = [module.vpc, module.ec2_backend]
+  depends_on = [module.vpc] # VPC에만 의존하도록 변경
 }
 
 resource "aws_security_group_rule" "allow_ec2_to_rds" {
@@ -196,9 +195,6 @@ resource "aws_security_group_rule" "allow_ec2_to_rds" {
   protocol                 = "tcp"
   security_group_id        = module.rds.rds_security_group_id     # 대상: RDS 보안 그룹
   source_security_group_id = module.ec2_backend.security_group_id # 소스: EC2 보안 그룹
-
-  # 이 규칙은 rds와 ec2_backend 모듈이 모두 생성된 후에 적용되어야 합니다.
-  depends_on = [module.rds, module.ec2_backend]
 }
 
 # -----------------------------------------------------------------------------

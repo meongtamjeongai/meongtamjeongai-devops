@@ -1,0 +1,2327 @@
+# 📊 Project Analysis Summary
+
+- **Root Directory**: D:\meongtamjeongai-devops
+- **Generated on**: 2025-06-10 00:40:48
+- **Total Files Included**: 26
+- **Total Lines of Content**: 2276
+- **Total Characters**: 66780
+- **Approximate Tokens**: 16695 (Note: A rough estimate, 1 token ≈ 4 chars)
+
+---
+
+# 🌳 Directory Tree
+
+```
+├── locals.tf
+├── main.tf
+├── modules/
+│   ├── acm/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── variables.tf
+│   │   └── versions.tf
+│   ├── alb/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── ec2_backend/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── user_data.sh
+│   │   └── variables.tf
+│   ├── nat_instance/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── rds/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   └── vpc/
+│       ├── main.tf
+│       ├── outputs.tf
+│       └── variables.tf
+├── outputs.tf
+├── providers.tf
+├── variables.tf
+└── versions.tf
+```
+
+# 📚 Combined Code Files
+
+--- START OF locals.tf ---
+# terraform-aws-fastapi-infra/locals.tf
+
+locals {
+  common_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    CreatedAt   = timestamp()
+  }
+}
+
+--- END OF locals.tf ---
+
+--- START OF main.tf ---
+# terraform-aws-fastapi-infra/main.tf
+#
+# 이 파일은 전체 인프라 스택의 주 진입점 역할을 합니다.
+# 다양한 모듈을 호출하고, 각 모듈 간의 의존성을 연결합니다.
+
+# -----------------------------------------------------------------------------
+# 0. ACM 인증서 생성 (Cloudflare DNS 검증)
+# -----------------------------------------------------------------------------
+module "acm" {
+  source = "./modules/acm"
+
+  project_name = var.project_name
+  environment  = var.environment
+  common_tags  = local.common_tags
+
+  domain_name               = var.domain_name                                                                      # 예: "mydomain.com"
+  subject_alternative_names = var.subdomain_for_cert != "" ? ["${var.subdomain_for_cert}.${var.domain_name}"] : [] # 예: ["www.mydomain.com"]
+  # 만약 여러 SAN이 필요하면, subject_alternative_names = ["www.${var.domain_name}", "api.${var.domain_name}"] 와 같이 리스트로 구성
+  cloudflare_zone_id = var.cloudflare_zone_id
+}
+
+# -----------------------------------------------------------------------------
+# 1. VPC 및 네트워크 인프라 (VPC, 서브넷, 라우팅 테이블, NAT 인스턴스)
+# -----------------------------------------------------------------------------
+
+# VPC 모듈 호출: 네트워크의 기반을 정의합니다.
+module "vpc" {
+  source = "./modules/vpc"
+
+  aws_region   = var.aws_region
+  project_name = var.project_name
+  environment  = var.environment
+  common_tags  = local.common_tags
+
+  availability_zones        = var.availability_zones    # 👈 루트의 list(string) 변수 전달
+  public_subnet_cidrs       = var.public_subnet_cidrs   # 👈 루트의 list(string) 변수 전달
+  primary_availability_zone = var.availability_zones[0] # 👈 프라이빗 서브넷용 AZ (예: 리스트의 첫 번째 AZ 사용)
+
+  # 루트 variables.tf에 정의된 CIDR 값들을 명시적으로 전달
+  vpc_cidr_block          = var.vpc_cidr_block
+  private_subnet_app_cidr = var.private_subnet_app_cidr
+  private_db_subnet_cidrs = var.private_db_subnet_cidrs
+}
+
+# NAT 인스턴스 모듈 호출: 프라이빗 서브넷의 아웃바운드 인터넷 액세스를 제공합니다.
+module "nat_instance" {
+  source = "./modules/nat_instance"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  common_tags      = local.common_tags
+  public_subnet_id = module.vpc.public_subnet_ids[0]
+  vpc_id           = module.vpc.vpc_id # VPC 모듈의 출력값 사용
+
+  private_subnet_cidrs = concat(
+    [var.private_subnet_app_cidr], # 단일 앱 프라이빗 서브넷 CIDR
+    var.private_db_subnet_cidrs    # DB 프라이빗 서브넷 CIDR 목록 (리스트)
+  )
+
+  # admin_app_port         = 8080 # 또는 var.admin_app_port 등으로 관리
+  # admin_app_source_cidrs = ["YOUR_OFFICE_IP/32", "YOUR_HOME_IP/32"] # 예시: 사무실 및 집 IP만 허용
+
+  depends_on = [module.vpc] # VPC가 먼저 생성되도록 의존성 명시
+}
+
+# 프라이빗 라우트 테이블에 NAT 인스턴스로 향하는 라우팅 규칙 추가:
+# 앱 및 DB 프라이빗 서브넷에서 외부로 나가는 트래픽을 NAT 인스턴스로 라우팅합니다.
+resource "aws_route" "private_app_subnet_to_nat" {
+  route_table_id         = module.vpc.private_app_route_table_id            # VPC 모듈 출력: 앱 라우트 테이블 ID
+  destination_cidr_block = "0.0.0.0/0"                                      # 모든 외부 트래픽
+  network_interface_id   = module.nat_instance.primary_network_interface_id # NAT 인스턴스 모듈 출력: ENI ID
+
+  # NAT 인스턴스가 완전히 준비된 후 라우트가 추가되도록 명시적 의존성 설정 (선택적이지만 권장)
+  depends_on = [module.nat_instance]
+}
+
+resource "aws_route" "private_db_subnet_to_nat" {
+  route_table_id         = module.vpc.private_db_route_table_id             # VPC 모듈 출력: DB 라우트 테이블 ID
+  destination_cidr_block = "0.0.0.0/0"                                      # 모든 외부 트래픽
+  network_interface_id   = module.nat_instance.primary_network_interface_id # NAT 인스턴스 모듈 출력: ENI ID
+
+  depends_on = [module.nat_instance]
+}
+
+# -----------------------------------------------------------------------------
+# 2. 애플리케이션 및 로드 밸런싱 (ALB, EC2 백엔드)
+# -----------------------------------------------------------------------------
+
+# 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2): EC2 인스턴스에 사용될 AMI를 찾습니다.
+data "aws_ami" "amazon_linux_2_for_backend" {
+  most_recent = true
+  owners      = ["amazon"] # Amazon 제공 AMI
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"] # Amazon Linux 2 최신 HVM GP2 AMI
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# ALB 모듈 호출: 애플리케이션 트래픽을 EC2 인스턴스로 분산합니다.
+module "alb" {
+  source = "./modules/alb"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  common_tags       = local.common_tags
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = module.vpc.public_subnet_ids # 👈 VPC 모듈의 list 출력값 전달
+
+  backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
+
+  create_https_listener = var.domain_name != "" && var.cloudflare_zone_id != ""
+  certificate_arn       = module.acm.validated_certificate_arn
+
+  # ALB는 VPC 모듈과 ACM 모듈(인증서)에 의존합니다.
+  depends_on = [module.vpc, module.acm]
+}
+
+# EC2 백엔드 모듈 호출: FastAPI 애플리케이션을 호스팅하는 EC2 인스턴스 및 ASG를 구성합니다.
+module "ec2_backend" {
+  source = "./modules/ec2_backend"
+
+  project_name           = var.project_name
+  environment            = var.environment
+  common_tags            = local.common_tags
+  vpc_id                 = module.vpc.vpc_id
+  private_app_subnet_ids = [module.vpc.private_app_subnet_id]
+  ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id
+  instance_type          = "t2.micro"
+
+  aws_region           = var.aws_region
+  fastapi_docker_image = var.custom_fastapi_docker_image # 👈 루트 변수 값을 모듈의 입력으로 전달
+  host_app_port        = var.backend_app_port            # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
+  fastapi_app_port     = 80                              # Dockerfile EXPOSE 및 CMD 포트와 일치하도록 설정 (또는 변수화)
+
+  # 🎯 ALB 대상 그룹 ARN 전달
+  target_group_arns          = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
+  health_check_type          = "ELB"                         # 명시적으로 ELB 사용
+  health_check_grace_period  = 60                            # ASG 헬스 체크 유예
+  asg_instance_warmup        = 30                            # 인스턴스 새로 고침 시 준비 시간
+  asg_min_healthy_percentage = 100                           # 최소 정상 인스턴스 유지
+
+  fastapi_database_url = "postgresql://${module.rds.db_instance_username}:${var.db_password}@${module.rds.db_instance_endpoint}/${module.rds.db_instance_name}"
+  fastapi_secret_key   = var.fastapi_secret_key
+  firebase_b64_json    = var.firebase_b64_json
+
+  # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
+  depends_on = [module.vpc, module.nat_instance, module.alb]
+}
+
+# ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가:
+# ALB와 EC2 인스턴스 간의 통신을 허용합니다.
+resource "aws_security_group_rule" "allow_alb_to_backend" {
+  type                     = "ingress"
+  description              = "Allow traffic from ALB to backend EC2 instances on app port"
+  from_port                = var.backend_app_port # 루트의 backend_app_port 사용
+  to_port                  = var.backend_app_port # 루트의 backend_app_port 사용
+  protocol                 = "tcp"
+  security_group_id        = module.ec2_backend.security_group_id # 대상: 백엔드 SG
+  source_security_group_id = module.alb.security_group_id         # 소스: ALB SG
+
+  # 이 규칙은 alb와 ec2_backend 모듈이 각각의 SG를 만든 후에 적용됨
+  depends_on = [module.alb, module.ec2_backend]
+}
+
+# -----------------------------------------------------------------------------
+# 3. 데이터베이스 (RDS)
+# -----------------------------------------------------------------------------
+
+# RDS 모듈 호출: 데이터베이스 인스턴스를 구성합니다.
+module "rds" {
+  source = "./modules/rds" # ./modules/rds 디렉토리 참조
+
+  # 필수 입력 변수 전달
+  project_name  = var.project_name
+  environment   = var.environment
+  common_tags   = local.common_tags
+  vpc_id        = module.vpc.vpc_id                # VPC 모듈 출력값
+  db_subnet_ids = module.vpc.private_db_subnet_ids # VPC 모듈 출력값 (현재 단일 DB 서브넷)
+  db_password   = var.db_password                  # 루트 variables.tf (Terraform Cloud에서 주입)
+
+  # 의존성: VPC 모듈(서브넷 ID, VPC ID)과 EC2 백엔드 모듈(보안 그룹 ID)이 완료된 후 실행
+  depends_on = [module.vpc, module.ec2_backend]
+}
+
+resource "aws_security_group_rule" "allow_ec2_to_rds" {
+  type                     = "ingress"
+  description              = "Allow traffic from Backend EC2 to RDS"
+  from_port                = module.rds.db_instance_port # rds 모듈의 출력값 사용
+  to_port                  = module.rds.db_instance_port # rds 모듈의 출력값 사용
+  protocol                 = "tcp"
+  security_group_id        = module.rds.rds_security_group_id     # 대상: RDS 보안 그룹
+  source_security_group_id = module.ec2_backend.security_group_id # 소스: EC2 보안 그룹
+
+  # 이 규칙은 rds와 ec2_backend 모듈이 모두 생성된 후에 적용되어야 합니다.
+  depends_on = [module.rds, module.ec2_backend]
+}
+
+# -----------------------------------------------------------------------------
+# 4. 기타 서비스 (ECR)
+# -----------------------------------------------------------------------------
+
+# ECR 레포지토리 생성: FastAPI 애플리케이션의 Docker 이미지를 저장합니다.
+resource "aws_ecr_repository" "fastapi_app" {
+  name                 = "${var.project_name}-${var.environment}-fastapi-app" # 예: fastapi-infra-dev-fastapi-app
+  image_tag_mutability = "MUTABLE"                                            # 또는 "IMMUTABLE". MUTABLE은 태그 재사용 가능, IMMUTABLE은 불가.
+  # 운영 환경에서는 고유 태그에 IMMUTABLE을 권장할 수 있습니다.
+
+  image_scanning_configuration {
+    scan_on_push = true # 이미지 푸시 시 취약점 스캔 활성화
+  }
+
+  tags = merge(local.common_tags, {
+    Purpose = "FastAPI Application Docker Images"
+  })
+}
+
+resource "aws_ecr_repository" "admin_app" {
+  # FastAPI 앱과 겹치지 않도록 고유한 이름을 지정합니다. (예: ...-admin-app)
+  name                 = "${var.project_name}-${var.environment}-admin-app"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = merge(local.common_tags, {
+    Purpose = "Admin Application Docker Images"
+  })
+}
+
+# -----------------------------------------------------------------------------
+# 5. Cloudflare DNS 레코드 생성 (ALB용 CNAME)
+# -----------------------------------------------------------------------------
+
+# 5.1. 특정 서브도메인용 CNAME (예: www.example.com)
+resource "cloudflare_dns_record" "alb_subdomain_cname" {
+  # var.subdomain_for_cert 비어있지 않고, 기본 조건 만족 시 생성
+  #count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null && var.subdomain_for_cert != "" ? 1 : 0
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" && var.subdomain_for_cert != "" ? 1 : 0
+
+  zone_id = var.cloudflare_zone_id
+  name    = var.subdomain_for_cert # 예: "www"
+  content = module.alb.alb_dns_name
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+}
+
+# 5.2. 루트 도메인용 CNAME (예: example.com)
+resource "cloudflare_dns_record" "alb_root_cname" {
+  # 기본 조건 만족 시 생성
+  #count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" ? 1 : 0
+
+  zone_id = var.cloudflare_zone_id
+  name    = var.domain_name # Cloudflare에서는 루트 도메인을 나타낼 때 실제 도메인 이름 또는 "@" 사용 가능
+  # 여기서는 var.domain_name 사용
+  content = module.alb.alb_dns_name
+  type    = "CNAME" # Cloudflare가 CNAME Flattening 처리
+  proxied = true
+  ttl     = 1
+}
+
+# 5.3. 와일드카드 서브도메인용 CNAME (예: *.example.com)
+resource "cloudflare_dns_record" "alb_wildcard_cname" {
+  # 기본 조건 만족 시 생성
+  # count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null ? 1 : 0
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" ? 1 : 0
+
+  zone_id = var.cloudflare_zone_id
+  name    = "*" # 와일드카드
+  content = module.alb.alb_dns_name
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+}
+
+--- END OF main.tf ---
+
+--- START OF modules/acm/main.tf ---
+# modules/acm/main.tf
+
+locals {
+  module_tags = merge(var.common_tags, {
+    TerraformModule = "acm"
+    Name            = "${var.project_name}-acm-cert-${var.environment}"
+  })
+}
+
+resource "aws_acm_certificate" "this" {
+  domain_name               = var.domain_name
+  subject_alternative_names = var.subject_alternative_names
+  validation_method         = "DNS"
+
+  tags = local.module_tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "cloudflare_dns_record" "validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
+      # dvo.resource_record_name 은 FQDN 형태 (_xyz.example.com.)
+      # dvo.resource_record_value 는 CNAME 대상 값
+      # dvo.resource_record_type 은 "CNAME"
+      name    = dvo.resource_record_name
+      content = dvo.resource_record_value
+      type    = dvo.resource_record_type
+    }
+  }
+
+  zone_id = var.cloudflare_zone_id
+  name    = each.value.name # Cloudflare provider가 zone_id 기준으로 처리 (예: _xyz.example.com. -> _xyz)
+  content = each.value.content
+  type    = each.value.type
+  proxied = false
+  ttl     = 1
+}
+
+# ACM 인증서 검증 완료 대기
+resource "aws_acm_certificate_validation" "this" {
+  certificate_arn = aws_acm_certificate.this.arn
+
+  # 👈 수정된 부분:
+  # aws_acm_certificate 리소스의 domain_validation_options 에서 직접 FQDN을 가져옵니다.
+  # 이 값들은 Cloudflare에 생성될 레코드의 이름과 정확히 일치해야 합니다.
+  validation_record_fqdns = [
+    for dvo in aws_acm_certificate.this.domain_validation_options : dvo.resource_record_name
+  ]
+
+  # Cloudflare 레코드가 생성된 후 이 리소스가 평가되도록 명시적 의존성 추가
+  depends_on = [cloudflare_dns_record.validation]
+}
+
+--- END OF modules/acm/main.tf ---
+
+--- START OF modules/acm/outputs.tf ---
+# modules/acm/outputs.tf
+
+output "certificate_arn" {
+  description = "The ARN of the requested ACM certificate."
+  value       = aws_acm_certificate.this.arn
+}
+
+output "validated_certificate_arn" {
+  description = "The ARN of the ACM certificate after DNS validation is complete. Use this ARN for ALB listeners."
+  value       = aws_acm_certificate_validation.this.certificate_arn
+  # aws_acm_certificate_validation 리소스는 성공 시 입력 certificate_arn을 그대로 반환합니다.
+  # 이 출력을 사용하면 검증이 완료되었음을 보장할 수 있습니다.
+}
+
+output "certificate_status" {
+  description = "The status of the ACM certificate (e.g., PENDING_VALIDATION, ISSUED, FAILED)."
+  value       = aws_acm_certificate.this.status # 검증 전 상태를 보여줄 수 있음
+}
+
+--- END OF modules/acm/outputs.tf ---
+
+--- START OF modules/acm/variables.tf ---
+# modules/acm/variables.tf
+
+variable "project_name" {
+  description = "Project name (used for tagging and resource naming)."
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (used for tagging and resource naming)."
+  type        = string
+}
+
+variable "common_tags" {
+  description = "Common tags to apply to all resources."
+  type        = map(string)
+  default     = {}
+}
+
+variable "domain_name" {
+  description = "The primary domain name for the certificate (e.g., example.com)."
+  type        = string
+}
+
+variable "subject_alternative_names" {
+  description = "A list of Subject Alternative Names (SANs) for the certificate (e.g., [\"www.example.com\", \"api.example.com\"])."
+  type        = list(string)
+  default     = []
+}
+
+variable "cloudflare_zone_id" {
+  description = "The Cloudflare Zone ID where the domain is managed."
+  type        = string
+}
+
+--- END OF modules/acm/variables.tf ---
+
+--- START OF modules/acm/versions.tf ---
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    cloudflare = {
+      source = "cloudflare/cloudflare" # 👈 올바른 소스 주소 명시
+      version = "~> 5.0" # 루트 모듈과 동일하게 또는 모듈에 맞는 버전 제약
+    }
+  }
+}
+
+--- END OF modules/acm/versions.tf ---
+
+--- START OF modules/alb/main.tf ---
+# modules/alb/main.tf
+
+locals {
+  module_tags = merge(var.common_tags, {
+    TerraformModule = "alb"
+  })
+
+  # 리스너 포트 결정 (HTTPS 우선)
+  listener_port     = var.certificate_arn != null ? 443 : 80
+  listener_protocol = var.certificate_arn != null ? "HTTPS" : "HTTP"
+}
+
+# 1. ALB용 보안 그룹 생성
+resource "aws_security_group" "alb_sg" {
+  name        = "${var.project_name}-alb-sg-${var.environment}"
+  description = "Security group for Application Load Balancer"
+  vpc_id      = var.vpc_id
+
+  # 인바운드 규칙 (이전과 동일)
+  ingress {
+    description      = "Allow HTTP traffic from anywhere"
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+  dynamic "ingress" {
+    for_each = var.certificate_arn != null ? [1] : []
+    content {
+      description      = "Allow HTTPS traffic from anywhere"
+      from_port        = 443
+      to_port          = 443
+      protocol         = "tcp"
+      cidr_blocks      = ["0.0.0.0/0"]
+      ipv6_cidr_blocks = ["::/0"]
+    }
+  }
+
+  # 아웃바운드 규칙: 💥 모든 외부 트래픽 허용으로 변경
+  egress {
+    description = "Allow all outbound traffic from ALB"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1" # 모든 프로토콜
+    cidr_blocks = ["0.0.0.0/0"]
+    # security_groups = [var.backend_security_group_id] # 👈 이 라인 제거 또는 주석 처리
+  }
+
+  tags = local.module_tags
+}
+
+# 2. Application Load Balancer (ALB) 생성
+resource "aws_lb" "main" {
+  name               = "${var.project_name}-alb-${var.environment}"
+  internal           = var.alb_is_internal
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = var.public_subnet_ids # 퍼블릭 서브넷 ID 목록
+
+  # 삭제 보호 비활성화 (개발/테스트 환경에 적합)
+  enable_deletion_protection = false
+
+  # 접근 로그 설정 (선택 사항, 필요시 S3 버킷 생성 후 설정)
+  # access_logs {
+  #   bucket  = "your-alb-logs-s3-bucket-name"
+  #   prefix  = "${var.project_name}-alb"
+  #   enabled = true
+  # }
+
+  tags = local.module_tags
+}
+
+# 3. 대상 그룹 (Target Group) 생성
+resource "aws_lb_target_group" "main" {
+  name        = "${var.project_name}-${var.environment}-tg" # 👈 'name' 속성 사용
+  port        = var.backend_app_port                        # 백엔드 인스턴스의 애플리케이션 포트
+  protocol    = "HTTP"                                      # ALB -> 백엔드 통신 프로토콜
+  vpc_id      = var.vpc_id
+  target_type = "instance" # EC2 인스턴스를 대상으로 함
+
+  health_check {
+    enabled             = true
+    path                = var.health_check_path
+    port                = var.health_check_port
+    protocol            = var.health_check_protocol
+    matcher             = "200-399" # HTTP 응답 코드 200-399를 정상으로 간주
+    interval            = 10
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  # 대상 그룹에 직접 인스턴스를 등록하지 않고, Auto Scaling Group에서 이 대상 그룹을 사용하도록 설정할 예정
+  # 따라서 targets 블록은 비워둡니다.
+
+  tags = local.module_tags
+}
+
+# 4. HTTP 리스너 생성
+# 이 리스너는 항상 생성됩니다.
+# - ACM 인증서가 있으면: 모든 HTTP 트래픽을 HTTPS로 리디렉션합니다.
+# - ACM 인증서가 없으면: HTTP 트래픽을 대상 그룹으로 전달합니다.
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    // create_https_listener 값에 따라 type과 target_group_arn 결정
+    type = var.create_https_listener ? "redirect" : "forward"
+
+    // create_https_listener가 true (리디렉션) 이면 target_group_arn은 null
+    // false (포워드) 이면 target_group_arn 설정
+    target_group_arn = var.create_https_listener ? null : aws_lb_target_group.main.arn
+
+    // create_https_listener가 true일 때만 redirect 블록 내용이 포함됨
+    dynamic "redirect" {
+      for_each = var.create_https_listener ? { "https_redirect" = true } : {}
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+}
+
+# 5. HTTPS 리스너 생성 (ACM 인증서가 제공된 경우)
+resource "aws_lb_listener" "https" {
+  # var.create_https_listener는 루트에서 domain_name 존재 여부 등으로 결정
+  count = var.create_https_listener ? 1 : 0
+
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  # certificate_arn은 count가 1일 때 유효한 값이 전달될 것으로 기대
+  certificate_arn = var.certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
+  }
+}
+
+--- END OF modules/alb/main.tf ---
+
+--- START OF modules/alb/outputs.tf ---
+# modules/alb/outputs.tf
+
+output "alb_dns_name" {
+  description = "생성된 Application Load Balancer의 DNS 이름"
+  value       = aws_lb.main.dns_name
+}
+
+output "alb_zone_id" {
+  description = "생성된 Application Load Balancer의 Canonical Hosted Zone ID (Route 53 별칭 레코드용)"
+  value       = aws_lb.main.zone_id
+}
+
+output "alb_arn" {
+  description = "생성된 Application Load Balancer의 ARN"
+  value       = aws_lb.main.arn
+}
+
+output "http_listener_arn" {
+  description = "HTTP 리스너의 ARN"
+  # 단일 리소스이므로 인덱스([0]) 없이 직접 .arn 속성 참조
+  value = aws_lb_listener.http.arn
+}
+
+output "https_listener_arn" {
+  description = "HTTPS 리스너의 ARN (생성된 경우)"
+  value       = length(aws_lb_listener.https) > 0 ? aws_lb_listener.https[0].arn : null
+}
+
+output "target_group_arn" {
+  description = "생성된 대상 그룹의 ARN (Auto Scaling Group에 연결 시 필요)"
+  value       = aws_lb_target_group.main.arn
+}
+
+output "target_group_name" {
+  description = "생성된 대상 그룹의 이름"
+  value       = aws_lb_target_group.main.name
+}
+
+output "security_group_id" {
+  description = "ALB에 연결된 보안 그룹의 ID"
+  value       = aws_security_group.alb_sg.id
+}
+
+--- END OF modules/alb/outputs.tf ---
+
+--- START OF modules/alb/variables.tf ---
+# modules/alb/variables.tf
+
+variable "project_name" {
+  description = "프로젝트 이름 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "environment" {
+  description = "배포 환경 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "common_tags" {
+  description = "모든 리소스에 공통적으로 적용될 태그"
+  type        = map(string)
+  default     = {}
+}
+
+variable "vpc_id" {
+  description = "ALB 및 관련 리소스가 생성될 VPC ID"
+  type        = string
+}
+
+variable "public_subnet_ids" {
+  description = "ALB를 배포할 퍼블릭 서브넷 ID 목록 (최소 2개 AZ의 서브넷 권장)"
+  type        = list(string)
+  # 현재 저희 구성에서는 단일 퍼블릭 서브넷만 사용 중이지만, ALB는 보통 2개 이상의 AZ에 걸쳐 구성됩니다.
+  # 루트 모듈에서 [module.vpc.public_subnet_id] 와 같이 단일 ID를 리스트로 전달할 예정입니다.
+}
+
+variable "alb_is_internal" {
+  description = "ALB를 내부용(internal)으로 생성할지 여부 (false면 인터넷 연결)"
+  type        = bool
+  default     = false # 기본값: 인터넷 연결 ALB
+}
+
+variable "backend_app_port" {
+  description = "백엔드 EC2 인스턴스에서 애플리케이션이 실행 중인 포트 (대상 그룹이 트래픽을 전달할 포트)"
+  type        = number
+  default     = 80 # 이전 ec2_backend 모듈의 user_data.sh에서 호스트의 80번 포트로 매핑함
+}
+
+variable "health_check_path" {
+  description = "대상 그룹 헬스 체크 경로"
+  type        = string
+  default     = "/" # FastAPI 루트 경로 또는 별도 헬스 체크 엔드포인트
+}
+
+variable "health_check_port" {
+  description = "대상 그룹 헬스 체크 포트 ('traffic-port' 또는 특정 포트)"
+  type        = string
+  default     = "traffic-port" # 트래픽을 받는 포트와 동일하게 사용
+}
+
+variable "health_check_protocol" {
+  description = "대상 그룹 헬스 체크 프로토콜"
+  type        = string
+  default     = "HTTP"
+}
+
+variable "create_https_listener" {
+  description = "Flag to determine if the HTTPS listener should be created. Set to false if no certificate_arn is provided or HTTPS is not needed."
+  type        = bool
+  default     = true # 기본적으로 생성 시도, 루트에서 제어
+}
+
+variable "certificate_arn" {
+  description = "HTTPS 리스너에 사용할 ACM 인증서 ARN (제공되지 않으면 HTTP 리스너만 생성)"
+  type        = string
+  default     = null
+}
+
+--- END OF modules/alb/variables.tf ---
+
+--- START OF modules/ec2_backend/main.tf ---
+# modules/ec2_backend/main.tf
+
+locals {
+  module_tags = merge(var.common_tags, {
+    TerraformModule = "ec2-backend"
+  })
+
+  # User Data 렌더링 시 사용할 변수 맵 (플레이스홀더 이름 변경 및 host_app_port 추가)
+  user_data_template_vars = {
+    fastapi_docker_image_placeholder    = var.fastapi_docker_image # 👈 모듈 입력 변수(var.fastapi_docker_image)를 플레이스홀더 이름으로 매핑
+    container_internal_port_placeholder = var.fastapi_app_port     # 컨테이너 내부 포트
+    host_exposed_port_placeholder       = var.host_app_port        # 호스트에 노출될 포트
+    aws_region_placeholder              = var.aws_region
+
+    database_url_placeholder      = var.fastapi_database_url
+    secret_key_placeholder        = var.fastapi_secret_key
+    firebase_b64_json_placeholder = var.firebase_b64_json
+  }
+}
+
+# 1. IAM 역할 및 인스턴스 프로파일 생성 (EC2 인스턴스용)
+resource "aws_iam_role" "ec2_backend_role" {
+  name = "${var.project_name}-ec2-backend-role-${var.environment}"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.module_tags
+}
+
+# 🎯 ECR 읽기 전용 권한 정책 연결 추가
+resource "aws_iam_role_policy_attachment" "ec2_backend_ecr_ro" {
+  role       = aws_iam_role.ec2_backend_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# EC2 인스턴스에 SSM 접근 및 CloudWatch Logs 기본 권한을 위한 정책 연결 (선택 사항)
+resource "aws_iam_role_policy_attachment" "ssm_policy" {
+  role       = aws_iam_role.ec2_backend_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# CloudWatch Agent 사용 계획이 있다면 아래 정책도 연결 가능
+# resource "aws_iam_role_policy_attachment" "cloudwatch_agent_policy" {
+#   role       = aws_iam_role.ec2_backend_role.name
+#   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+# }
+
+resource "aws_iam_instance_profile" "ec2_backend_profile" {
+  name = "${var.project_name}-ec2-backend-profile-${var.environment}"
+  role = aws_iam_role.ec2_backend_role.name
+
+  tags = local.module_tags
+}
+
+# 2. EC2 백엔드 인스턴스용 보안 그룹
+resource "aws_security_group" "ec2_backend_sg" {
+  name        = "${var.project_name}-ec2-backend-sg-${var.environment}"
+  description = "Security group for EC2 backend instances"
+  vpc_id      = var.vpc_id
+
+  # 인바운드 규칙:
+  # 💥 중요: ALB로부터의 트래픽 허용 규칙은 루트 모듈에서 aws_security_group_rule을 사용하여 추가합니다.
+  ingress {
+    description = "Allow HTTP traffic on app port from within VPC (placeholder for ALB)"
+    from_port   = var.host_app_port
+    to_port     = var.host_app_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+
+  # 아웃바운드 규칙: 모든 외부 트래픽 허용 (NAT 인스턴스를 통해 인터넷 접근)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.module_tags
+}
+
+# 3. 시작 템플릿 (Launch Template) 생성
+resource "aws_launch_template" "ec2_backend_lt" {
+  name_prefix   = "${var.project_name}-backend-lt-${var.environment}-"
+  image_id      = var.ami_id
+  instance_type = var.instance_type
+
+  iam_instance_profile {
+    arn = aws_iam_instance_profile.ec2_backend_profile.arn
+  }
+
+  network_interfaces {
+    associate_public_ip_address = false # 프라이빗 서브넷에 배포
+    security_groups             = [aws_security_group.ec2_backend_sg.id]
+    # delete_on_termination = true # 기본값 true
+  }
+
+  # User Data 스크립트 파일 렌더링 및 Base64 인코딩
+  user_data = base64encode(templatefile("${path.module}/user_data.sh", local.user_data_template_vars))
+
+  # 인스턴스에 적용될 태그
+  tag_specifications {
+    resource_type = "instance"
+    tags = merge(local.module_tags, {
+      Name = "${var.project_name}-backend-instance-${var.environment}"
+    })
+  }
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(local.module_tags, {
+      Name = "${var.project_name}-backend-volume-${var.environment}"
+    })
+  }
+
+  # Metadata 옵션 (IMDSv2 권장)
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # IMDSv2 사용
+    http_put_response_hop_limit = 1
+  }
+
+  # 기본적으로 최신 버전의 시작 템플릿을 사용하도록 설정
+  # update_default_version = true # 필요에 따라 사용
+  # default_version = version # 특정 버전을 기본으로 지정할 때
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = local.module_tags
+}
+
+# 4. Auto Scaling Group (ASG) 생성
+resource "aws_autoscaling_group" "ec2_backend_asg" {
+  name_prefix = "${var.project_name}-backend-asg-${var.environment}-"
+
+  launch_template {
+    id      = aws_launch_template.ec2_backend_lt.id
+    version = aws_launch_template.ec2_backend_lt.latest_version # 👈 항상 최신 버전의 시작 템플릿을 사용하도록 설정
+  }
+
+  min_size                  = var.asg_min_size
+  max_size                  = var.asg_max_size
+  desired_capacity          = var.asg_desired_capacity
+  vpc_zone_identifier       = var.private_app_subnet_ids
+  health_check_type         = var.health_check_type
+  health_check_grace_period = var.health_check_grace_period
+  target_group_arns         = var.target_group_arns
+
+  # 🎯 인스턴스 새로 고침 (Instance Refresh) 설정 추가 또는 확인
+  instance_refresh {
+    strategy = "Rolling" # 점진적 교체 방식 (다른 옵션: "Replace")
+    preferences {
+      # 새로 고침 중 유지해야 할 최소 정상 인스턴스 비율.
+      # 예: 100%로 설정하면, 새 인스턴스가 정상화된 후 이전 인스턴스를 종료 (더 안전하지만 느림)
+      # 예: 90%로 설정하면, 전체 용량의 10%까지만 동시에 교체 진행 가능
+      min_healthy_percentage = var.asg_min_healthy_percentage
+
+      # 새 인스턴스가 시작된 후 애플리케이션이 완전히 준비되고 헬스 체크를 통과할 때까지 대기하는 시간(초).
+      # 이 시간 동안에는 min_healthy_percentage 계산에 포함되지 않거나, 헬스 체크를 유예합니다.
+      instance_warmup = var.asg_instance_warmup
+
+      # 새로 고침을 특정 비율에서 일시 중지하고 대기할 수 있는 체크포인트 설정 (선택 사항)
+      # checkpoint_percentages = [33, 66, 100]
+      # checkpoint_delay       = "PT5M" # 각 체크포인트에서 5분 대기 (ISO 8601 duration format)
+
+      # 기타 고급 설정:
+      # scale_in_protected_instances = "Refresh" # 축소 방지된 인스턴스도 새로고침에 포함할지 여부
+      # standby_instances            = "Terminate" # 대기 상태 인스턴스 처리 방법
+    }
+    # 어떤 변경이 있을 때 새로 고침을 트리거할지 지정할 수 있습니다.
+    # 시작 템플릿 버전 변경은 ASG가 launch_template.version = "$Latest" 또는 .latest_version 을 사용할 때
+    # 자동으로 감지하고 업데이트를 시도하는 경향이 있지만, 명시적인 트리거를 설정할 수도 있습니다.
+    # 예를 들어, ASG의 특정 태그 값이 변경될 때 새로고침을 강제할 수 있습니다.
+    # triggers = ["tag"] # 예시: 태그 변경 시 새로고침 (이 경우 관련 태그도 관리해야 함)
+    # 현재는 launch_template의 version 변경을 주된 트리거로 간주합니다.
+    # triggers = ["launch_template"] 기본값이므로 굳이 명시적으로 설정할 필요는 없습니다.
+  }
+
+  # ASG가 생성하는 인스턴스에 자동으로 태그 전파
+  dynamic "tag" {
+    for_each = merge(local.module_tags, {
+      Name                 = "${var.project_name}-backend-instance-${var.environment}"
+      "AmazonEC2CreatedBy" = "TerraformASG"
+    })
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+--- END OF modules/ec2_backend/main.tf ---
+
+--- START OF modules/ec2_backend/outputs.tf ---
+# modules/ec2_backend/outputs.tf
+
+output "asg_name" {
+  description = "생성된 Auto Scaling Group의 이름"
+  value       = aws_autoscaling_group.ec2_backend_asg.name
+}
+
+output "asg_arn" {
+  description = "생성된 Auto Scaling Group의 ARN"
+  value       = aws_autoscaling_group.ec2_backend_asg.arn
+}
+
+output "launch_template_id" {
+  description = "생성된 시작 템플릿의 ID"
+  value       = aws_launch_template.ec2_backend_lt.id
+}
+
+output "launch_template_latest_version" {
+  description = "생성된 시작 템플릿의 최신 버전 번호"
+  value       = aws_launch_template.ec2_backend_lt.latest_version
+}
+
+output "security_group_id" {
+  description = "EC2 백엔드 인스턴스용 보안 그룹 ID (ALB 설정 시 필요)"
+  value       = aws_security_group.ec2_backend_sg.id
+}
+
+output "iam_role_arn" {
+  description = "EC2 백엔드 인스턴스용 IAM 역할의 ARN"
+  value       = aws_iam_role.ec2_backend_role.arn
+}
+
+output "iam_instance_profile_arn" {
+  description = "EC2 백엔드 인스턴스용 IAM 인스턴스 프로파일의 ARN"
+  value       = aws_iam_instance_profile.ec2_backend_profile.arn
+}
+
+--- END OF modules/ec2_backend/outputs.tf ---
+
+--- START OF modules/ec2_backend/user_data.sh ---
+#!/bin/bash
+# modules/ec2_backend/user_data.sh (Corrected Final Version)
+
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+set -e
+
+echo "--- $(date) --- Starting EC2 User Data Script ---"
+
+# Terraform templatefile을 통해 전달될 변수들
+FASTAPI_IMAGE_URI="${fastapi_docker_image_placeholder}"
+HOST_EXPOSED_PORT="${host_exposed_port_placeholder}"
+CONTAINER_INTERNAL_PORT="${container_internal_port_placeholder}"
+AWS_REGION="${aws_region_placeholder}"
+DATABASE_URL="${database_url_placeholder}"
+SECRET_KEY="${secret_key_placeholder}"
+FIREBASE_B64_JSON="${firebase_b64_json_placeholder}"
+
+# ... (Docker 설치 및 ECR 로그인 로직은 동일) ...
+echo "Installing Docker..."
+sudo yum update -y -q
+sudo amazon-linux-extras install docker -y -q
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -a -G docker ec2-user
+
+echo "Waiting for Docker daemon..."
+# ... (Docker 데몬 대기 로직) ...
+
+if [[ "$FASTAPI_IMAGE_URI" == *".dkr.ecr."* ]]; then
+  echo "ECR image detected. Logging in to ECR..."
+  # ... (ECR 로그인 로직) ...
+fi
+
+echo "Pulling Docker image: $FASTAPI_IMAGE_URI ..."
+sudo docker pull "$FASTAPI_IMAGE_URI"
+
+# 5. Docker 컨테이너 실행 (환경 변수 주입 및 예외 처리 포함)
+echo "Running Docker container with environment variables..."
+CONTAINER_NAME="fastapi_app_container"
+if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then
+    echo "Attempting to remove existing container: $CONTAINER_NAME"
+    sudo docker rm -f $CONTAINER_NAME
+fi
+
+# 💡 docker run 명령어
+if ! sudo docker run -d --name $CONTAINER_NAME --restart always \
+  -p "$HOST_EXPOSED_PORT":"$CONTAINER_INTERNAL_PORT" \
+  -e APP_ENV="prod" \
+  -e DATABASE_URL="$DATABASE_URL" \
+  -e SECRET_KEY="$SECRET_KEY" \
+  -e FIREBASE_SERVICE_ACCOUNT_KEY_PATH="/tmp/firebase_service_account.json" \
+  -e FIREBASE_SERVICE_ACCOUNT_KEY_JSON_BASE64="$FIREBASE_B64_JSON" \
+  "$FASTAPI_IMAGE_URI"; then
+  
+  # docker run 명령 자체가 실패한 경우
+  echo "::error:: 'docker run' command failed to start the container initially."
+  exit 1
+fi
+
+# 컨테이너가 시작은 되었지만, 바로 종료되었는지 확인하는 로직
+echo "Container start command issued. Verifying status in 10 seconds..."
+sleep 10
+RUNNING_CONTAINER_ID=$(sudo docker ps -q --filter "name=$CONTAINER_NAME" --filter "status=running")
+
+if [ -z "$RUNNING_CONTAINER_ID" ]; then
+  echo "::error:: Container is not in 'running' state after start attempt."
+  EXITED_CONTAINER_ID=$(sudo docker ps -a --filter "name=$CONTAINER_NAME" --filter "status=exited" --format "{{.ID}}" | head -n 1)
+  
+  if [ -n "$EXITED_CONTAINER_ID" ]; then
+    echo "Logs from recently exited container $EXITED_CONTAINER_ID:"
+    sudo docker logs "$EXITED_CONTAINER_ID"
+  else
+    echo "Could not find a recently exited container with the name $CONTAINER_NAME."
+  fi
+  exit 1
+fi
+
+echo "✅ Docker container $CONTAINER_NAME (ID: $RUNNING_CONTAINER_ID) is confirmed to be running."
+echo "--- $(date) --- EC2 User Data Script Finished Successfully ---"
+--- END OF modules/ec2_backend/user_data.sh ---
+
+--- START OF modules/ec2_backend/variables.tf ---
+# modules/ec2_backend/variables.tf
+
+variable "project_name" {
+  description = "프로젝트 이름 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "aws_region" {
+  description = "AWS 리전 (ECR 로그인 등에 사용)"
+  type        = string
+}
+
+variable "environment" {
+  description = "배포 환경 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "common_tags" {
+  description = "모든 리소스에 공통적으로 적용될 태그"
+  type        = map(string)
+  default     = {}
+}
+
+variable "vpc_id" {
+  description = "EC2 인스턴스의 보안 그룹이 생성될 VPC ID"
+  type        = string
+}
+
+variable "private_app_subnet_ids" {
+  description = "EC2 인스턴스(ASG)를 배포할 프라이빗 앱 서브넷 ID 목록"
+  type        = list(string) # 여러 AZ에 걸쳐 배포할 경우를 대비해 list로 받음 (현재는 단일 AZ)
+}
+
+variable "instance_type" {
+  description = "EC2 인스턴스 유형"
+  type        = string
+  default     = "t2.micro" # 프리티어
+}
+
+variable "ami_id" {
+  description = "EC2 인스턴스에 사용할 AMI ID (Amazon Linux 2 권장)"
+  type        = string
+  # 이 값은 루트 모듈에서 data.aws_ami를 통해 동적으로 가져와 전달하는 것이 좋습니다.
+}
+
+# Auto Scaling Group (ASG) 관련 변수
+variable "asg_min_size" {
+  description = "ASG의 최소 인스턴스 수"
+  type        = number
+  default     = 1
+}
+
+variable "asg_max_size" {
+  description = "ASG의 최대 인스턴스 수"
+  type        = number
+  default     = 2 # 테스트를 위해 2로 설정, 필요시 조정
+}
+
+variable "asg_desired_capacity" {
+  description = "ASG의 원하는 인스턴스 수"
+  type        = number
+  default     = 1
+}
+
+variable "health_check_type" {
+  description = "ASG 헬스 체크 유형 (EC2 또는 ELB)"
+  type        = string
+  default     = "ELB"
+}
+
+variable "asg_instance_warmup" {
+  description = "인스턴스 새로 고침 시 새 인스턴스가 서비스에 투입되기 전 준비 시간 (초)"
+  type        = number
+  default     = 30
+}
+
+variable "asg_min_healthy_percentage" {
+  description = "인스턴스 새로 고침 중 유지되어야 하는 최소 정상 인스턴스 비율 (%)"
+  type        = number
+  default     = 90 # 예: 90%. 가용성을 위해 적절히 조절
+}
+
+# (선택 사항) 인스턴스 새로 고침 체크포인트 관련 변수 (기본값은 null로 사용 안 함)
+variable "asg_refresh_checkpoint_percentages" {
+  description = "인스턴스 새로 고침을 일시 중지할 체크포인트 비율 목록 (예: [30, 60, 100])"
+  type        = list(number)
+  default     = null
+}
+
+variable "asg_refresh_checkpoint_delay" {
+  description = "각 체크포인트에서 대기할 시간 (ISO 8601 기간 형식, 예: PT5M = 5분)"
+  type        = string
+  default     = null
+}
+
+variable "health_check_grace_period" {
+  description = "새 인스턴스 시작 후 헬스 체크 유예 기간(초)"
+  type        = number
+  default     = 60
+}
+
+# Docker 및 FastAPI 관련 변수
+variable "fastapi_docker_image" {
+  description = "실행할 FastAPI 애플리케이션의 Docker 이미지 (예: your-account/your-repo:latest)"
+  type        = string
+}
+
+variable "fastapi_app_port" {
+  description = "FastAPI 애플리케이션이 컨테이너 내부에서 실행되는 포트"
+  type        = number
+  default     = 80 # 위 예제 이미지는 80 포트에서 실행됨
+}
+
+variable "host_app_port" { # 👈 새로 추가: 컨테이너를 호스트에 노출할 포트
+  description = "EC2 호스트에서 Docker 컨테이너의 애플리케이션을 노출할 포트 (ALB가 이 포트를 타겟)"
+  type        = number
+  default     = 80
+}
+
+variable "my_ip_for_ssh" {
+  description = "EC2 인스턴스에 SSH 접근을 허용할 나의 IP 주소 (CIDR 형태, 디버깅용)"
+  type        = string
+  default     = "0.0.0.0/0" # ☢️ 보안 경고: 실제 IP로 변경 권장!
+}
+
+variable "target_group_arns" {
+  description = "EC2 인스턴스를 등록할 ALB 대상 그룹 ARN 목록"
+  type        = list(string)
+  default     = [] # 기본값은 빈 리스트
+}
+
+variable "backend_app_port" {
+  description = "백엔드 애플리케이션이 EC2 인스턴스에서 사용하는 포트 (ALB 대상 그룹 및 보안 그룹 규칙에 사용)"
+  type        = number
+  default     = 80 # ec2_backend 모듈의 user_data.sh 에서 호스트의 80 포트로 매핑했음
+}
+
+variable "fastapi_database_url" {
+  description = "FastAPI가 사용할 전체 DATABASE_URL"
+  type        = string
+  sensitive   = true # DB 연결 정보는 민감 정보이므로 출력에 노출되지 않도록 함
+}
+
+variable "fastapi_secret_key" {
+  description = "FastAPI 애플리케이션의 JWT 시크릿 키"
+  type        = string
+  sensitive   = true # 시크릿 키는 민감 정보
+}
+
+variable "firebase_b64_json" {
+  description = "Base64로 인코딩된 Firebase 서비스 계정 JSON"
+  type        = string
+  sensitive   = true # 서비스 계정 키는 민감 정보
+}
+
+--- END OF modules/ec2_backend/variables.tf ---
+
+--- START OF modules/nat_instance/main.tf ---
+# modules/nat_instance/main.tf
+
+locals {
+  module_tags = merge(var.common_tags, {
+    TerraformModule = "nat-instance"
+  })
+}
+
+# 🎯 1. NAT 인스턴스용 IAM 역할 및 인스턴스 프로파일 생성 (SSM 접근용)
+resource "aws_iam_role" "nat_instance_role" {
+  name = "${var.project_name}-nat-instance-role-${var.environment}"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+  tags = local.module_tags
+}
+
+resource "aws_iam_role_policy_attachment" "nat_ssm_policy" {
+  role       = aws_iam_role.nat_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" # SSM Agent 작동에 필요한 기본 권한
+}
+
+resource "aws_iam_role_policy_attachment" "nat_ecr_ro_policy" {
+  role       = aws_iam_role.nat_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_instance_profile" "nat_instance_profile" {
+  name = "${var.project_name}-nat-instance-profile-${var.environment}"
+  role = aws_iam_role.nat_instance_role.name
+  tags = local.module_tags
+}
+
+# NAT 인스턴스용 최신 Amazon Linux 2 AMI 조회 (기존과 동일)
+data "aws_ami" "nat_ami" {
+  most_recent = true
+  owners      = [var.nat_instance_ami_owner]
+  filter {
+    name   = "name"
+    values = [var.nat_instance_ami_name_filter]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# NAT 인스턴스용 보안 그룹
+resource "aws_security_group" "nat" {
+  name        = "${var.project_name}-nat-instance-sg-${var.environment}"
+  description = "Security group for NAT instance, allowing traffic from private subnets" # 설명 업데이트
+  vpc_id      = var.vpc_id
+
+  # 인바운드 규칙: 프라이빗 서브넷들로부터의 모든 트래픽 허용 (기존과 동일)
+  dynamic "ingress" {
+    for_each = var.private_subnet_cidrs
+    content {
+      description = "Allow all traffic from Private Subnet ${ingress.key + 1} (${ingress.value})"
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = [ingress.value]
+    }
+  }
+
+  # 🎯 추가: 관리자 앱 포트로의 인바운드 규칙
+  ingress {
+    description     = "Allow access to Admin App from specified IPs"
+    from_port       = var.admin_app_port
+    to_port         = var.admin_app_port
+    protocol        = "tcp"
+    cidr_blocks     = var.admin_app_source_cidrs
+  }
+  
+  # 아웃바운드 규칙: 모든 외부 트래픽 허용 (기존과 동일)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-nat-sg-${var.environment}"
+  })
+}
+
+# NAT EC2 인스턴스 생성
+resource "aws_instance" "nat" {
+  ami           = data.aws_ami.nat_ami.id
+  instance_type = var.nat_instance_type
+  subnet_id     = var.public_subnet_id
+
+  # 🎯 IAM 인스턴스 프로파일 연결
+  iam_instance_profile = aws_iam_instance_profile.nat_instance_profile.name
+
+  vpc_security_group_ids = [aws_security_group.nat.id]
+  source_dest_check      = false
+
+  user_data = <<-EOF
+              #!/bin/bash
+              # Enable IP forwarding
+              echo "Enabling IP forwarding..."
+              sudo sysctl -w net.ipv4.ip_forward=1
+              echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.conf
+              sudo sysctl -p /etc/sysctl.conf
+              echo "IP forwarding enabled."
+
+              # Install iptables-services to make rules persistent (for Amazon Linux 2)
+              echo "Installing iptables-services..."
+              sudo yum install -y iptables-services
+              echo "iptables-services installed."
+
+              PRIMARY_INTERFACE=$(ip route | grep default | sed -e "s/^.*dev \([^ ]*\).*$/\1/")
+              if [ -z "$PRIMARY_INTERFACE" ]; then
+                echo "ERROR: Could not determine primary network interface."
+                exit 1
+              fi
+              echo "Primary network interface: $PRIMARY_INTERFACE"
+
+              echo "Adding MASQUERADE rule for $PRIMARY_INTERFACE..."
+              sudo iptables -t nat -A POSTROUTING -o $PRIMARY_INTERFACE -j MASQUERADE
+              echo "MASQUERADE rule added."
+
+              echo "Saving iptables rules..."
+              sudo iptables-save | sudo tee /etc/sysconfig/iptables
+              echo "iptables rules saved."
+
+              echo "Enabling and starting iptables service..."
+              sudo systemctl enable iptables
+              sudo systemctl start iptables
+              echo "iptables service enabled and started."
+
+              # Docker 설치 및 활성화 (관리자 앱 실행용)
+              echo "Installing Docker..."
+              sudo yum update -y -q
+              sudo amazon-linux-extras install docker -y -q
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -a -G docker ec2-user
+              echo "Docker installed and started."
+
+              echo "NAT configuration completed."
+              EOF
+
+  user_data_replace_on_change = true
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-nat-instance-${var.environment}"
+  })
+}
+
+--- END OF modules/nat_instance/main.tf ---
+
+--- START OF modules/nat_instance/outputs.tf ---
+# modules/nat_instance/outputs.tf
+
+output "instance_id" {
+  description = "생성된 NAT EC2 인스턴스의 ID"
+  value       = aws_instance.nat.id
+}
+
+output "primary_network_interface_id" {
+  description = "NAT 인스턴스의 기본 네트워크 인터페이스 ID (라우팅 규칙 설정에 사용)"
+  value       = aws_instance.nat.primary_network_interface_id
+}
+
+# EIP를 사용하지 않으므로 EIP 관련 출력은 제거
+# output "public_ip" {
+#   description = "NAT 인스턴스에 할당된 공인 IP 주소 (Elastic IP)"
+#   value       = aws_eip.nat.public_ip
+# }
+
+output "dynamic_public_ip" {
+  description = "NAT 인스턴스에 할당된 동적 공인 IP 주소 (인스턴스 재시작 시 변경될 수 있음)"
+  value       = aws_instance.nat.public_ip # 인스턴스의 공인 IP 속성 참조
+}
+
+output "private_ip" {
+  description = "NAT 인스턴스의 사설 IP 주소"
+  value       = aws_instance.nat.private_ip
+}
+
+output "security_group_id" {
+  description = "NAT 인스턴스에 연결된 보안 그룹의 ID"
+  value       = aws_security_group.nat.id
+}
+
+--- END OF modules/nat_instance/outputs.tf ---
+
+--- START OF modules/nat_instance/variables.tf ---
+# modules/nat_instance/variables.tf
+
+variable "project_name" {
+  description = "프로젝트 이름 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "environment" {
+  description = "배포 환경 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "common_tags" {
+  description = "모든 리소스에 공통적으로 적용될 태그"
+  type        = map(string)
+  default     = {}
+}
+
+variable "public_subnet_id" {
+  description = "NAT 인스턴스가 배포될 퍼블릭 서브넷의 ID"
+  type        = string
+}
+
+variable "vpc_id" {
+  description = "NAT 인스턴스의 보안 그룹이 생성될 VPC의 ID"
+  type        = string
+}
+
+variable "private_subnet_cidrs" {
+  description = "NAT 인스턴스에 접근해야 하는 프라이빗 서브넷 CIDR 블록 목록"
+  type        = list(string)
+  # 예시: ["10.0.2.0/24", "10.0.3.0/24"]
+}
+
+variable "nat_instance_type" {
+  description = "NAT 인스턴스로 사용할 EC2 인스턴스 유형"
+  type        = string
+  default     = "t2.micro" # 프리티어 활용
+}
+
+variable "nat_instance_ami_owner" {
+  description = "NAT 인스턴스 AMI 소유자 (Amazon Linux 2의 경우 'amazon')"
+  type        = string
+  default     = "amazon"
+}
+
+variable "nat_instance_ami_name_filter" {
+  description = "NAT 인스턴스 AMI 이름 필터 (Amazon Linux 2 최신 버전)"
+  type        = string
+  default     = "amzn2-ami-hvm-*-x86_64-gp2"
+}
+
+variable "admin_app_port" {
+  description = "NAT 인스턴스에서 실행될 관리자 앱이 사용할 포트"
+  type        = number
+  default     = 8501 # 예시 포트
+}
+
+variable "admin_app_source_cidrs" {
+  description = "관리자 앱에 접속을 허용할 소스 IP CIDR 블록 목록"
+  type        = list(string)
+  default     = ["0.0.0.0/0"] # ☢️ 보안 경고: 실제 운영 시에는 사무실 IP 등 특정 IP 대역으로 반드시 제한하세요!
+}
+--- END OF modules/nat_instance/variables.tf ---
+
+--- START OF modules/rds/main.tf ---
+# modules/rds/main.tf
+
+locals {
+  module_tags = merge(var.common_tags, {
+    TerraformModule = "rds"
+  })
+
+  # DB 엔진에 따른 기본 포트 설정 (var.db_port가 null일 경우)
+  # aws_db_instance 리소스 자체도 엔진에 따라 기본 포트를 잘 설정하지만,
+  # 보안 그룹 등에서 명시적으로 사용하기 위해 정의합니다.
+  db_engine_default_port = var.db_port != null ? var.db_port : (
+    var.db_engine == "postgres" ? 5432 : (
+      var.db_engine == "mysql" ? 3306 : null # 다른 엔진 지원 시 추가
+      # 지원하지 않는 엔진이거나 var.db_port도 null이면, 실제 DB 생성 시 엔진 기본값에 의존
+  ))
+}
+
+# 1. DB 서브넷 그룹 생성
+# RDS 인스턴스가 위치할 프라이빗 서브넷들의 그룹입니다.
+resource "aws_db_subnet_group" "main" {
+  name       = "${var.project_name}-rds-sng-${var.environment}"
+  subnet_ids = var.db_subnet_ids # 루트 모듈에서 전달받은 프라이빗 DB 서브넷 ID 목록
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-rds-sng-${var.environment}"
+  })
+}
+
+# 2. RDS 인스턴스용 보안 그룹 생성
+resource "aws_security_group" "rds_sg" {
+  name        = "${var.project_name}-rds-sg-${var.environment}"
+  description = "Security group for RDS instance, allowing access from backend EC2 instances"
+  vpc_id      = var.vpc_id
+
+  # 아웃바운드 규칙: 일반적으로 모든 아웃바운드를 허용 (필요에 따라 제한 가능)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-rds-sg-${var.environment}"
+  })
+}
+
+# 3. RDS DB 인스턴스 생성
+resource "aws_db_instance" "main" {
+  identifier_prefix = "${lower(var.project_name)}-rds-${lower(var.environment)}-" # 최종 식별자는 AWS가 유니크하게 생성
+
+  engine            = var.db_engine
+  engine_version    = var.db_engine_version
+  instance_class    = var.db_instance_class
+  allocated_storage = var.db_allocated_storage
+  storage_type      = var.db_storage_type
+  storage_encrypted = var.storage_encrypted # 기본값 true 권장
+
+  db_name  = var.db_name # 초기 데이터베이스 이름 (엔진에 따라 생성되지 않을 수도 있음)
+  username = var.db_username
+  password = var.db_password              # sensitive = true 로 선언된 변수
+  port     = local.db_engine_default_port # 명시적으로 포트 지정
+
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+
+  multi_az            = var.multi_az            # 프리티어는 보통 false
+  publicly_accessible = var.publicly_accessible # 보안상 false 권장
+
+  backup_retention_period = var.backup_retention_period # 자동 백업 보존 기간
+  skip_final_snapshot     = var.skip_final_snapshot     # 개발/테스트 시 true
+
+  # Character Set, Timezone 등 파라미터 그룹을 통해 설정 가능 (여기서는 기본값 사용)
+  # parameter_group_name = aws_db_parameter_group.default.name 
+
+  # 유지보수 기간, 백업 기간 등 설정 가능
+  # maintenance_window      = "sun:03:00-sun:04:00" 
+  # backup_window           = "04:00-05:00"
+
+  # CloudWatch Logs 로 로그 내보내기 (선택 사항)
+  # enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"] # PostgreSQL 예시
+
+  apply_immediately = false # 변경 사항을 다음 유지보수 기간에 적용 (운영 환경 고려)
+  # 개발 중에는 true로 설정하여 즉시 적용되도록 할 수도 있음
+
+  deletion_protection = var.deletion_protection # 운영 환경에서는 true 권장
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-rds-instance-${var.environment}"
+  })
+}
+
+--- END OF modules/rds/main.tf ---
+
+--- START OF modules/rds/outputs.tf ---
+# modules/rds/outputs.tf
+
+output "db_instance_endpoint" {
+  description = "RDS DB 인스턴스의 연결 엔드포인트 주소"
+  value       = aws_db_instance.main.address
+}
+
+output "db_instance_port" {
+  description = "RDS DB 인스턴스가 리스닝하는 포트"
+  value       = aws_db_instance.main.port
+}
+
+output "db_instance_name" {
+  description = "RDS DB 인스턴스 생성 시 지정한 초기 데이터베이스 이름 (엔진에 따라 실제 생성 여부 다름)"
+  value       = aws_db_instance.main.db_name # 모듈 변수 var.db_name 과 동일할 것임
+}
+
+output "db_instance_identifier" {
+  description = "RDS DB 인스턴스의 고유 식별자"
+  value       = aws_db_instance.main.identifier
+}
+
+output "db_instance_username" {
+  description = "RDS DB 인스턴스의 마스터 사용자 이름"
+  value       = aws_db_instance.main.username # 모듈 변수 var.db_username 과 동일할 것임
+  sensitive   = true                          # 사용자 이름도 민감 정보로 간주될 수 있음
+}
+
+output "db_instance_arn" {
+  description = "RDS DB 인스턴스의 ARN"
+  value       = aws_db_instance.main.arn
+}
+
+output "db_subnet_group_name" {
+  description = "생성된 DB 서브넷 그룹의 이름"
+  value       = aws_db_subnet_group.main.name
+}
+
+output "rds_security_group_id" {
+  description = "RDS DB 인스턴스에 연결된 보안 그룹의 ID"
+  value       = aws_security_group.rds_sg.id
+}
+
+--- END OF modules/rds/outputs.tf ---
+
+--- START OF modules/rds/variables.tf ---
+# modules/rds/variables.tf
+
+variable "project_name" {
+  description = "프로젝트 이름 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "environment" {
+  description = "배포 환경 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "common_tags" {
+  description = "모든 리소스에 공통적으로 적용될 태그"
+  type        = map(string)
+  default     = {}
+}
+
+variable "vpc_id" {
+  description = "RDS 인스턴스의 보안 그룹이 생성될 VPC ID"
+  type        = string
+}
+
+variable "db_subnet_ids" {
+  description = "RDS 인스턴스를 배포할 프라이빗 DB 서브넷 ID 목록"
+  type        = list(string)
+  # 현재 저희 구성에서는 단일 DB 서브넷을 사용 중이므로, 루트 모듈에서 [module.vpc.private_db_subnet_id] 와 같이 전달합니다.
+}
+
+variable "db_engine" {
+  description = "데이터베이스 엔진 (예: postgres, mysql, oracle-se2, sqlserver-ex)"
+  type        = string
+  default     = "postgres"
+}
+
+variable "db_engine_version" {
+  description = "데이터베이스 엔진 버전"
+  type        = string
+  # 엔진에 따라 유효한 버전을 AWS 설명서에서 확인해야 합니다.
+  default = "17.4"
+}
+
+variable "db_instance_class" {
+  description = "RDS 인스턴스 유형 (프리티어: db.t3.micro 또는 db.t4g.micro - 리전/엔진별 지원 확인)"
+  type        = string
+  default     = "db.t4g.micro" # PostgreSQL 프리티어 가능 (20GB 스토리지와 함께)
+}
+
+variable "db_allocated_storage" {
+  description = "할당된 스토리지 크기 (GB, 프리티어: 20GB)"
+  type        = number
+  default     = 20
+}
+
+variable "db_storage_type" {
+  description = "스토리지 유형 (gp2, gp3, io1 등)"
+  type        = string
+  default     = "gp3" # gp2보다 성능 및 비용 효율이 좋음
+}
+
+variable "db_name" {
+  description = "생성할 데이터베이스의 초기 이름 (DB 식별자 아님)"
+  type        = string
+  default     = "fastapidb" # 예시
+}
+
+variable "db_username" {
+  description = "데이터베이스 마스터 사용자 이름"
+  type        = string
+  default     = "dbadmin"
+}
+
+variable "db_password" {
+  description = "데이터베이스 마스터 사용자 암호 (매우 민감한 정보!)"
+  type        = string
+  sensitive   = true # Terraform 출력에 표시되지 않도록 함
+  # 이 값은 Terraform Cloud 변수(민감) 또는 AWS Secrets Manager를 통해 관리하는 것이 가장 좋습니다.
+  # 루트 모듈에서 값을 전달받아야 합니다.
+}
+
+variable "multi_az" {
+  description = "다중 AZ 배포 여부 (프리티어에서는 보통 false)"
+  type        = bool
+  default     = false
+}
+
+variable "publicly_accessible" {
+  description = "RDS 인스턴스에 공인 IP 할당 여부 (보안상 false 권장)"
+  type        = bool
+  default     = false
+}
+
+variable "skip_final_snapshot" {
+  description = "DB 인스턴스 삭제 시 최종 스냅샷 생성 여부 (개발/테스트 시 true)"
+  type        = bool
+  default     = true
+}
+
+variable "backup_retention_period" {
+  description = "자동 백업 보존 기간 (일, 0이면 비활성화, 프리티어는 7일 가능)"
+  type        = number
+  default     = 0 # 개발/테스트용으로 비활성화, 필요시 7 이상으로 설정
+}
+
+variable "storage_encrypted" {
+  description = "스토리지 암호화 사용 여부"
+  type        = bool
+  default     = true
+}
+
+variable "deletion_protection" {
+  description = "삭제 방지 기능 활성화 여부 (운영 환경에서는 true 권장)"
+  type        = bool
+  default     = false # 개발/테스트용
+}
+
+variable "db_port" {
+  description = "데이터베이스 엔진 포트 (이 변수는 직접 사용되기보다 내부적으로 엔진에 따라 결정됨)"
+  type        = number
+  default     = null # null로 두면 엔진 기본 포트 사용 (PostgreSQL: 5432, MySQL: 3306)
+}
+
+--- END OF modules/rds/variables.tf ---
+
+--- START OF modules/vpc/main.tf ---
+# modules/vpc/main.tf
+
+# 모듈 내 리소스에 공통적으로 적용될 태그를 위한 local 변수
+locals {
+  module_tags = merge(var.common_tags, {
+    TerraformModule = "vpc"
+    Name            = "${var.project_name}-vpc-${var.environment}"
+  })
+}
+
+# 1. Virtual Private Cloud (VPC) 생성
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr_block
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-vpc-${var.environment}"
+  })
+}
+
+# 2. 서브넷 생성
+# 2-1. 퍼블릭 서브넷
+resource "aws_subnet" "public" {
+
+  for_each = {
+    for i, az in var.availability_zones : i => {
+      az   = az
+      cidr = var.public_subnet_cidrs[i]
+    }
+  }
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.az
+  map_public_ip_on_launch = true
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-public-subnet-${each.value.az}-${var.environment}"
+    Tier = "Public"
+    AZ   = each.value.az
+  })
+}
+
+# 2-2. 프라이빗 서브넷 (FastAPI 애플리케이션 서버용)
+resource "aws_subnet" "private_app" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.private_subnet_app_cidr
+  availability_zone       = var.primary_availability_zone # 단일 AZ 지정
+  map_public_ip_on_launch = false
+
+  tags = merge(local.module_tags, {
+    Name  = "${var.project_name}-private-app-subnet-${var.primary_availability_zone}-${var.environment}"
+    Tier  = "Private"
+    AZ    = var.primary_availability_zone
+    Usage = "Application"
+  })
+}
+
+# 2-3. 프라이빗 서브넷 (RDS 데이터베이스용)
+resource "aws_subnet" "private_db" {
+  for_each = {
+    for i, az in var.availability_zones : i => { # public 서브넷과 동일한 AZ 목록 사용
+      az   = az
+      cidr = var.private_db_subnet_cidrs[i] # DB용 CIDR 목록 사용
+    }
+  }
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.az # 👈 실제 서브넷이 생성될 AZ
+  map_public_ip_on_launch = false
+
+  tags = merge(local.module_tags, {
+    Name  = "${var.project_name}-private-db-subnet-${each.value.az}-${var.environment}"
+    Tier  = "Private"
+    AZ    = each.value.az
+    Usage = "Database"
+  })
+}
+
+
+# 3. 인터넷 게이트웨이 (IGW) 생성 및 VPC에 연결
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-igw-${var.environment}"
+  })
+}
+
+# 4. 퍼블릭 라우트 테이블 생성 및 설정 (모든 퍼블릭 서브넷에 동일한 라우트 테이블 연결)
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = merge(local.module_tags, {
+    Name = "${var.project_name}-public-rt-${var.environment}"
+    Tier = "Public"
+  })
+}
+
+# 생성된 모든 퍼블릭 서브넷에 위 라우트 테이블 연결
+resource "aws_route_table_association" "public" {
+  for_each       = aws_subnet.public # aws_subnet.public이 for_each로 생성되므로, association도 for_each 사용
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.public.id
+}
+
+# 6. 프라이빗 라우트 테이블 생성 (⚠️ 중요: 0.0.0.0/0 라우팅 규칙은 여기서 제거)
+# 6-1. 프라이빗 서브넷(App)용 라우트 테이블
+resource "aws_route_table" "private_app" {
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(local.module_tags, {
+    Name  = "${var.project_name}-private-app-rt-${var.environment}"
+    Tier  = "Private"
+    Usage = "Application"
+  })
+}
+
+resource "aws_route_table_association" "private_app" {
+  subnet_id      = aws_subnet.private_app.id
+  route_table_id = aws_route_table.private_app.id
+}
+
+# 6-2. 프라이빗 서브넷(DB)용 라우트 테이블
+resource "aws_route_table" "private_db" {
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(local.module_tags, {
+    Name  = "${var.project_name}-private-db-rt-${var.environment}"
+    Tier  = "Private"
+    Usage = "Database"
+  })
+}
+
+# 프라이빗 DB 서브넷들에 대한 라우트 테이블 연결(association)도 for_each를 사용해야 합니다.
+# 예를 들어, 모든 DB 서브넷이 동일한 (NAT로 향하는) 프라이빗 라우트 테이블을 사용한다면:
+resource "aws_route_table_association" "private_db" {
+  for_each       = aws_subnet.private_db # aws_subnet.private_db가 for_each로 생성되므로
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.private_db.id # private_db_rt 를 참조 (이름 확인 필요, 예시임)
+  # 또는 각 AZ별로 별도의 라우트 테이블을 가질 수도 있음
+}
+
+--- END OF modules/vpc/main.tf ---
+
+--- START OF modules/vpc/outputs.tf ---
+# modules/vpc/outputs.tf
+
+output "vpc_id" {
+  description = "생성된 VPC의 ID"
+  value       = aws_vpc.main.id
+}
+
+output "vpc_cidr_block" {
+  description = "VPC에 할당된 CIDR 블록"
+  value       = aws_vpc.main.cidr_block
+}
+
+output "public_subnet_ids" { # 👈 이름 변경 및 값 수정
+  description = "생성된 모든 퍼블릭 서브넷의 ID 목록"
+  value       = [for subnet in aws_subnet.public : subnet.id]
+}
+
+output "public_subnet_cidr_blocks" {
+  description = "생성된 모든 퍼블릭 서브넷의 CIDR 블록 목록"
+  value       = [for subnet in aws_subnet.public : subnet.cidr_block]
+}
+
+output "public_subnet_availability_zones" {
+  description = "생성된 모든 퍼블릭 서브넷이 위치한 가용 영역 목록"
+  value       = [for subnet in aws_subnet.public : subnet.availability_zone]
+}
+
+output "private_app_subnet_id" {
+  description = "생성된 애플리케이션용 프라이빗 서브넷의 ID"
+  value       = aws_subnet.private_app.id
+}
+
+output "private_app_subnet_cidr_block" {
+  description = "애플리케이션용 프라이빗 서브넷에 할당된 CIDR 블록"
+  value       = aws_subnet.private_app.cidr_block
+}
+
+output "private_app_subnet_availability_zone" {
+  description = "애플리케이션용 프라이빗 서브넷이 위치한 가용 영역"
+  value       = aws_subnet.private_app.availability_zone
+}
+
+output "private_db_subnet_ids" {
+  description = "생성된 모든 프라이빗 DB 서브넷의 ID 목록"
+  value       = [for subnet in aws_subnet.private_db : subnet.id]
+}
+
+output "private_db_subnet_cidr_blocks" {
+  description = "생성된 모든 프라이빗 DB 서브넷의 CIDR 블록 목록"
+  value       = [for subnet in aws_subnet.private_db : subnet.cidr_block]
+}
+
+output "private_db_subnet_availability_zones" {
+  description = "생성된 모든 프라이빗 DB 서브넷이 위치한 가용 영역 목록"
+  value       = [for subnet in aws_subnet.private_db : subnet.availability_zone]
+}
+
+output "private_app_route_table_id" {
+  description = "애플리케이션용 프라이빗 서브넷에 연결된 라우트 테이블의 ID"
+  value       = aws_route_table.private_app.id
+}
+
+output "private_db_route_table_id" {
+  description = "데이터베이스용 프라이빗 서브넷에 연결된 라우트 테이블의 ID"
+  value       = aws_route_table.private_db.id
+}
+
+--- END OF modules/vpc/outputs.tf ---
+
+--- START OF modules/vpc/variables.tf ---
+# modules/vpc/variables.tf
+
+variable "aws_region" {
+  description = "AWS 리전 (예: ap-northeast-2)"
+  type        = string
+}
+
+variable "project_name" {
+  description = "프로젝트 이름 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "environment" {
+  description = "배포 환경 (리소스 태깅 및 이름에 사용)"
+  type        = string
+}
+
+variable "common_tags" {
+  description = "모든 리소스에 공통적으로 적용될 태그"
+  type        = map(string)
+  default     = {}
+}
+
+variable "vpc_cidr_block" {
+  description = "VPC에 할당할 CIDR 블록"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "availability_zones" {
+  description = "리소스를 배포할 가용 영역 목록"
+  type        = list(string)
+}
+
+variable "public_subnet_cidrs" {
+  description = "각 가용 영역에 생성할 퍼블릭 서브넷 CIDR 블록 목록"
+  type        = list(string)
+}
+
+variable "private_subnet_app_cidr" {
+  description = "FastAPI 앱 서버용 프라이빗 서브넷 CIDR 블록"
+  type        = string
+}
+
+variable "private_db_subnet_cidrs" {
+  description = "각 가용 영역에 생성할 프라이빗 DB 서브넷 CIDR 블록 목록"
+  type        = list(string)
+}
+
+# 프라이빗 서브넷을 위한 단일 AZ 지정 변수 (기존 private_subnet_app/db가 사용할 AZ)
+# 만약 프라이빗 서브넷도 Multi-AZ로 확장한다면 이 변수는 필요 없어지거나 다르게 사용될 수 있습니다.
+variable "primary_availability_zone" {
+  description = "주요 프라이빗 리소스(예: 현재 구성의 프라이빗 서브넷)를 배포할 단일 가용 영역"
+  type        = string
+  # 예: var.availability_zones[0] 값을 루트에서 전달받도록 할 수 있음
+}
+
+--- END OF modules/vpc/variables.tf ---
+
+--- START OF outputs.tf ---
+# terraform-aws-fastapi-infra/outputs.tf
+
+output "vpc_id" {
+  description = "생성된 VPC의 ID"
+  value       = module.vpc.vpc_id
+  sensitive   = false # ID는 민감 정보가 아님
+}
+
+output "all_public_subnet_ids" {
+  description = "생성된 모든 퍼블릭 서브넷 ID 목록"
+  value       = module.vpc.public_subnet_ids
+}
+
+output "private_app_subnet_id" {
+  description = "생성된 애플리케이션용 프라이빗 서브넷의 ID"
+  value       = module.vpc.private_app_subnet_id
+}
+
+output "all_private_db_subnet_ids" {
+  description = "생성된 모든 프라이빗 DB 서브넷 ID 목록"
+  value       = module.vpc.private_db_subnet_ids # 👈 VPC 모듈의 리스트 출력값 전체를 사용
+}
+
+output "private_app_route_table_id" {
+  description = "애플리케이션용 프라이빗 라우트 테이블 ID (NAT 라우팅 추가에 사용)"
+  value       = module.vpc.private_app_route_table_id
+}
+
+output "private_db_route_table_id" {
+  description = "데이터베이스용 프라이빗 라우트 테이블 ID (NAT 라우팅 추가에 사용)"
+  value       = module.vpc.private_db_route_table_id
+}
+
+output "vpc_module_outputs" {
+  description = "VPC 모듈의 모든 출력값 (디버깅용)"
+  value       = module.vpc # 모듈 전체를 출력하면 모든 output이 나옴
+  sensitive   = true       # 내부적으로 민감한 정보가 있을 수 있으므로 true로 설정 권장
+}
+
+output "nat_instance_id" {
+  description = "생성된 NAT 인스턴스의 ID"
+  value       = module.nat_instance.instance_id
+}
+
+output "nat_instance_dynamic_public_ip" {
+  description = "NAT 인스턴스에 할당된 동적 공인 IP 주소 (주의: 재시작 시 변경 가능)"
+  value       = module.nat_instance.dynamic_public_ip # 모듈의 새 출력 참조
+}
+
+output "nat_instance_private_ip" {
+  description = "NAT 인스턴스의 사설 IP 주소"
+  value       = module.nat_instance.private_ip
+}
+
+output "nat_instance_primary_network_interface_id" {
+  description = "NAT 인스턴스의 기본 네트워크 인터페이스 ID"
+  value       = module.nat_instance.primary_network_interface_id
+}
+
+output "backend_asg_name" {
+  description = "백엔드 Auto Scaling Group의 이름"
+  value       = module.ec2_backend.asg_name
+}
+
+output "backend_security_group_id" {
+  description = "백엔드 EC2 인스턴스용 보안 그룹 ID (ALB 설정에 필요)"
+  value       = module.ec2_backend.security_group_id
+}
+
+output "backend_launch_template_id" {
+  description = "백엔드 EC2 인스턴스용 시작 템플릿 ID"
+  value       = module.ec2_backend.launch_template_id
+}
+
+output "alb_dns_name" {
+  description = "애플리케이션 로드 밸런서의 DNS 주소 (애플리케이션 접속 URL)"
+  value       = module.alb.alb_dns_name
+}
+
+output "rds_instance_endpoint" {
+  description = "RDS DB 인스턴스 연결 엔드포인트 주소"
+  value       = module.rds.db_instance_endpoint
+}
+
+output "rds_instance_port" {
+  description = "RDS DB 인스턴스 연결 포트"
+  value       = module.rds.db_instance_port
+}
+
+output "rds_db_name" {
+  description = "RDS DB 인스턴스의 초기 데이터베이스 이름"
+  value       = module.rds.db_instance_name # 모듈 출력값 참조
+}
+
+output "rds_db_username" {
+  description = "RDS DB 인스턴스의 마스터 사용자 이름"
+  value       = module.rds.db_instance_username # 모듈 출력값 참조
+  sensitive   = true
+}
+
+output "ecr_repository_url" {
+  description = "생성된 Amazon ECR 리포지토리의 URL"
+  value       = aws_ecr_repository.fastapi_app.repository_url
+}
+
+output "admin_app_ecr_repository_url" {
+  description = "관리자 애플리케이션용 Amazon ECR 리포지토리의 URL"
+  value       = aws_ecr_repository.admin_app.repository_url
+}
+
+output "acm_certificate_arn_validated" {
+  description = "The ARN of the validated ACM certificate used for the ALB."
+  value       = module.acm.validated_certificate_arn
+}
+
+--- END OF outputs.tf ---
+
+--- START OF providers.tf ---
+# terraform-aws-fastapi-infra/provider.tf
+
+provider "aws" {
+  region = var.aws_region
+}
+
+provider "cloudflare" {
+  # 테라폼 클라우드에서 CLOUDFLARE_API_TOKEN 환경변수가 자동으로 사용됩니다.
+}
+
+--- END OF providers.tf ---
+
+--- START OF variables.tf ---
+# terraform-aws-fastapi-infra/variables.tf
+
+variable "custom_fastapi_docker_image" {
+  description = "배포할 사용자 정의 FastAPI 애플리케이션 Docker 이미지 URI"
+  type        = string
+  default     = "tiangolo/uvicorn-gunicorn-fastapi:python3.9" # 기본값 또는 이전 버전 이미지
+}
+
+variable "aws_region" {
+  description = "AWS 리소스를 배포할 리전입니다."
+  type        = string
+  default     = "ap-northeast-2"
+}
+
+variable "project_name" {
+  description = "프로젝트 이름 태그 등에 사용됩니다."
+  type        = string
+  default     = "fastapi-infra"
+}
+
+variable "environment" {
+  description = "배포 환경 (예: dev, stg, prod)"
+  type        = string
+  default     = "dev"
+}
+
+variable "availability_zones" {
+  description = "리소스를 배포할 가용 영역 목록 (최소 2개 권장)"
+  type        = list(string)
+  default     = ["ap-northeast-2a", "ap-northeast-2c"] # 예시: 서울 리전의 a, c 영역
+}
+
+# VPC 및 NAT Instance 모듈에서 사용할 CIDR 변수들
+variable "vpc_cidr_block" {
+  description = "VPC에 할당할 CIDR 블록"
+  type        = string
+  default     = "10.0.0.0/16" # VPC 모듈의 기본값과 동일하게 설정하거나 필요시 수정
+}
+
+variable "public_subnet_cidrs" {
+  description = "각 가용 영역에 생성할 퍼블릭 서브넷 CIDR 블록 목록"
+  type        = list(string)
+  default     = ["10.0.100.0/24", "10.0.101.0/24"] # 예시: 2개의 CIDR 블록
+}
+
+variable "private_subnet_app_cidr" {
+  description = "FastAPI 앱 서버용 프라이빗 서브넷 CIDR 블록"
+  type        = string
+  default     = "10.0.2.0/24" # VPC 모듈의 기본값과 동일하게 설정하거나 필요시 수정
+}
+
+variable "private_db_subnet_cidrs" { # 👈 리스트 형태로 변경 또는 신규 추가
+  description = "각 가용 영역에 생성할 프라이빗 DB 서브넷 CIDR 블록 목록"
+  type        = list(string)
+  default     = ["10.0.30.0/24", "10.0.103.0/24"] # 예시: 2개의 CIDR 블록 (public_subnet_cidrs와 겹치지 않게)
+}
+
+# NAT 인스턴스 접속용 변수
+
+variable "backend_app_port" {
+  description = "백엔드 애플리케이션이 EC2 인스턴스에서 사용하는 포트"
+  type        = number
+  default     = 80
+}
+
+variable "db_password" {
+  description = "데이터베이스 마스터 사용자 암호"
+  type        = string
+  sensitive   = true
+}
+
+variable "fastapi_secret_key" {
+  description = "FastAPI 애플리케이션의 JWT 시크릿 키"
+  type        = string
+  sensitive   = true
+}
+
+variable "firebase_b64_json" {
+  description = "Base64로 인코딩된 Firebase 서비스 계정 JSON"
+  type        = string
+  sensitive   = true
+}
+
+variable "domain_name" {
+  description = "The primary domain name for which the SSL certificate will be issued (e.g., 'example.com'). This will also be used as the Cloudflare zone name if not overridden."
+  type        = string
+  # 이 값은 Terraform Cloud 변수를 통해 주입됩니다.
+}
+
+variable "subdomain_for_cert" {
+  description = "Optional subdomain to include in the certificate as a Subject Alternative Name (e.g., 'www', 'api'). If empty, only the primary_domain_name is used."
+  type        = string
+  default     = "www" # 기본적으로 www.domain_name 을 SAN으로 포함
+}
+
+variable "cloudflare_zone_id" {
+  description = "The Cloudflare Zone ID corresponding to your domain_name. This is required for DNS validation of the ACM certificate."
+  type        = string
+  # 이 값은 Terraform Cloud 변수(민감 정보일 수 있음)를 통해 주입됩니다.
+}
+
+--- END OF variables.tf ---
+
+--- START OF versions.tf ---
+# terraform-aws-fastapi-infra/versions.tf
+
+terraform {
+  required_version = ">= 1.12.0" # Terraform 최소 권장 버전
+
+  # Terraform Cloud 연동 설정
+  # VCS 기반 워크플로우에서는 이 블록이 없어도 TFC가 자동으로 workspace와 연결하지만,
+  # 명시적으로 선언해두면 로컬에서 `terraform init` 시 혼동을 줄일 수 있습니다.
+  cloud {
+    organization = "meongtamjeongai"
+    workspaces {
+      name = "meongtamjeongai-devops"
+    }
+  }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5"
+    }
+  }
+}
+
+--- END OF versions.tf ---
+
