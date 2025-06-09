@@ -32,15 +32,6 @@ resource "aws_security_group" "rds_sg" {
   description = "Security group for RDS instance, allowing access from backend EC2 instances"
   vpc_id      = var.vpc_id
 
-  # 인바운드 규칙: 백엔드 EC2 인스턴스 보안 그룹으로부터 DB 포트로의 접근 허용
-  ingress {
-    description     = "Allow DB traffic from Backend EC2 SG"
-    from_port       = local.db_engine_default_port # 계산된 DB 포트
-    to_port         = local.db_engine_default_port # 계산된 DB 포트
-    protocol        = "tcp"
-    security_groups = [var.backend_ec2_sg_id] # 백엔드 EC2의 보안 그룹 ID
-  }
-
   # 아웃바운드 규칙: 일반적으로 모든 아웃바운드를 허용 (필요에 따라 제한 가능)
   egress {
     from_port   = 0

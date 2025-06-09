@@ -177,16 +177,28 @@ module "rds" {
   source = "./modules/rds" # ./modules/rds 디렉토리 참조
 
   # 필수 입력 변수 전달
-  project_name      = var.project_name
-  environment       = var.environment
-  common_tags       = local.common_tags
-  vpc_id            = module.vpc.vpc_id                    # VPC 모듈 출력값
-  db_subnet_ids     = module.vpc.private_db_subnet_ids     # VPC 모듈 출력값 (현재 단일 DB 서브넷)
-  db_password       = var.db_password                      # 루트 variables.tf (Terraform Cloud에서 주입)
-  backend_ec2_sg_id = module.ec2_backend.security_group_id # EC2 백엔드 모듈 출력값
+  project_name  = var.project_name
+  environment   = var.environment
+  common_tags   = local.common_tags
+  vpc_id        = module.vpc.vpc_id                # VPC 모듈 출력값
+  db_subnet_ids = module.vpc.private_db_subnet_ids # VPC 모듈 출력값 (현재 단일 DB 서브넷)
+  db_password   = var.db_password                  # 루트 variables.tf (Terraform Cloud에서 주입)
 
   # 의존성: VPC 모듈(서브넷 ID, VPC ID)과 EC2 백엔드 모듈(보안 그룹 ID)이 완료된 후 실행
   depends_on = [module.vpc, module.ec2_backend]
+}
+
+resource "aws_security_group_rule" "allow_ec2_to_rds" {
+  type                     = "ingress"
+  description              = "Allow traffic from Backend EC2 to RDS"
+  from_port                = module.rds.db_instance_port # rds 모듈의 출력값 사용
+  to_port                  = module.rds.db_instance_port # rds 모듈의 출력값 사용
+  protocol                 = "tcp"
+  security_group_id        = module.rds.rds_security_group_id     # 대상: RDS 보안 그룹
+  source_security_group_id = module.ec2_backend.security_group_id # 소스: EC2 보안 그룹
+
+  # 이 규칙은 rds와 ec2_backend 모듈이 모두 생성된 후에 적용되어야 합니다.
+  depends_on = [module.rds, module.ec2_backend]
 }
 
 # -----------------------------------------------------------------------------

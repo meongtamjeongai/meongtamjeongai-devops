@@ -78,11 +78,6 @@ variable "db_password" {
   # 루트 모듈에서 값을 전달받아야 합니다.
 }
 
-variable "backend_ec2_sg_id" {
-  description = "백엔드 EC2 인스턴스의 보안 그룹 ID (RDS 접근 허용용)"
-  type        = string
-}
-
 variable "multi_az" {
   description = "다중 AZ 배포 여부 (프리티어에서는 보통 false)"
   type        = bool
