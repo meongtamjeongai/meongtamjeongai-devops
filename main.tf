@@ -59,7 +59,7 @@ module "nat_instance" {
 
   # admin_app_port         = 8080 # 또는 var.admin_app_port 등으로 관리
   # admin_app_source_cidrs = ["YOUR_OFFICE_IP/32", "YOUR_HOME_IP/32"] # 예시: 사무실 및 집 IP만 허용
- 
+
   depends_on = [module.vpc] # VPC가 먼저 생성되도록 의존성 명시
 }
 
@@ -204,6 +204,20 @@ resource "aws_ecr_repository" "fastapi_app" {
   })
 }
 
+resource "aws_ecr_repository" "admin_app" {
+  # FastAPI 앱과 겹치지 않도록 고유한 이름을 지정합니다. (예: ...-admin-app)
+  name                 = "${var.project_name}-${var.environment}-admin-app"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = merge(local.common_tags, {
+    Purpose = "Admin Application Docker Images"
+  })
+}
+
 # -----------------------------------------------------------------------------
 # 5. Cloudflare DNS 레코드 생성 (ALB용 CNAME)
 # -----------------------------------------------------------------------------
@@ -213,7 +227,7 @@ resource "cloudflare_dns_record" "alb_subdomain_cname" {
   # var.subdomain_for_cert 비어있지 않고, 기본 조건 만족 시 생성
   #count = var.domain_name != "" && var.cloudflare_zone_id != "" && module.alb.alb_dns_name != null && var.subdomain_for_cert != "" ? 1 : 0
   count = var.domain_name != "" && var.cloudflare_zone_id != "" && var.subdomain_for_cert != "" ? 1 : 0
-  
+
   zone_id = var.cloudflare_zone_id
   name    = var.subdomain_for_cert # 예: "www"
   content = module.alb.alb_dns_name
