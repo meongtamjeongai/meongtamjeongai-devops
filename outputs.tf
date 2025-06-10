@@ -112,3 +112,8 @@ output "acm_certificate_arn_validated" {
   description = "The ARN of the validated ACM certificate used for the ALB."
   value       = module.acm.validated_certificate_arn
 }
+
+output "alb_internal_dns_for_vpc_traffic" {
+  description = "The DNS name to be used for traffic within the VPC."
+  value       = module.alb.alb_dns_name # ⭐️ 기존 alb_dns_name 출력을 사용하면 됩니다.
+}

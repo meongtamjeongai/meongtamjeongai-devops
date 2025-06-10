@@ -42,3 +42,9 @@ output "admin_app_target_group_arn" {
   description = "The ARN of the target group for the admin application."
   value       = var.create_admin_target_group ? aws_lb_target_group.admin_app[0].arn : null
 }
+
+# ⭐️ 'internal = false'인 ALB의 dns_name은 public DNS이지만, VPC 내부에서는 private IP로 해석됩니다. 그대로 사용해도 무방합니다.
+output "alb_dns_name_internal" {
+  description = "The internal DNS name of the load balancer. This is used for VPC-internal traffic."
+  value       = aws_lb.main.dns_name
+}
