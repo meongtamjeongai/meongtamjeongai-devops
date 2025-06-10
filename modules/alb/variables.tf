@@ -69,3 +69,28 @@ variable "certificate_arn" {
   type        = string
   default     = null
 }
+
+# 관리자 앱 라우팅을 위한 변수 추가
+variable "create_admin_target_group" {
+  description = "Whether to create a target group for the admin application."
+  type        = bool
+  default     = false
+}
+
+variable "admin_app_port" {
+  description = "The port on which the admin application is running on the NAT instance."
+  type        = number
+  default     = 8501 # NAT 인스턴스 모듈과 일치
+}
+
+variable "nat_instance_id" {
+  description = "The ID of the NAT instance to be registered as a target."
+  type        = string
+  default     = null
+}
+
+variable "admin_app_hostname" {
+  description = "The hostname to route to the admin application (e.g., 'admin.example.com')."
+  type        = string
+  default     = ""
+}

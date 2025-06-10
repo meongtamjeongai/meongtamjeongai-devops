@@ -104,3 +104,9 @@ variable "nat_instance_ami_id_override" {
   type        = string
   default     = "ami-03761804003d15fb2"
 }
+
+variable "admin_app_port" {
+  description = "NAT 인스턴스에서 실행될 관리자 앱이 사용할 포트"
+  type        = number
+  default     = 8501 # 예: Streamlit 기본 포트
+}

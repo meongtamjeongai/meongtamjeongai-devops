@@ -14,7 +14,10 @@ module "acm" {
   common_tags  = local.common_tags
 
   domain_name               = var.domain_name                                                                      # 예: "mydomain.com"
-  subject_alternative_names = var.subdomain_for_cert != "" ? ["${var.subdomain_for_cert}.${var.domain_name}"] : [] # 예: ["www.mydomain.com"]
+    subject_alternative_names = compact(concat(
+    var.subdomain_for_cert != "" ? ["${var.subdomain_for_cert}.${var.domain_name}"] : [],
+    ["admin.${var.domain_name}"] # admin 서브도메인 추가
+  ))
   # 만약 여러 SAN이 필요하면, subject_alternative_names = ["www.${var.domain_name}", "api.${var.domain_name}"] 와 같이 리스트로 구성
   cloudflare_zone_id = var.cloudflare_zone_id
 }
@@ -99,6 +102,12 @@ module "alb" {
 
   backend_app_port = var.backend_app_port # 루트의 backend_app_port -> alb의 backend_app_port로 전달
 
+  # 관리자 앱 라우팅 활성화
+  create_admin_target_group = true
+  admin_app_port            = var.admin_app_port # 루트 변수에서 전달
+  nat_instance_id           = module.nat_instance.instance_id # NAT 인스턴스 ID 전달
+  admin_app_hostname        = "admin.${var.domain_name}" # 호스트 이름 동적 생성
+
   create_https_listener = var.domain_name != "" && var.cloudflare_zone_id != ""
   certificate_arn       = module.acm.validated_certificate_arn
 
@@ -132,7 +141,7 @@ module "ec2_backend" {
   vpc_id                 = module.vpc.vpc_id
   private_app_subnet_ids = [module.vpc.private_app_subnet_id]
   ami_id                 = data.aws_ami.amazon_linux_2_for_backend.id
-  instance_type          = "t2.micro"
+  instance_type          = "t2.micro"  
 
   aws_region           = var.aws_region
   fastapi_docker_image = var.custom_fastapi_docker_image # 👈 루트 변수 값을 모듈의 입력으로 전달
@@ -140,7 +149,7 @@ module "ec2_backend" {
   fastapi_app_port     = 80                              # Dockerfile EXPOSE 및 CMD 포트와 일치하도록 설정 (또는 변수화)
 
   # 🎯 ALB 대상 그룹 ARN 전달
-  target_group_arns          = [module.alb.target_group_arn] # module.alb가 생성된 후에 이 값이 결정됨
+  target_group_arns          = [module.alb.fastapi_app_target_group_arn]
   health_check_type          = "ELB"                         # 명시적으로 ELB 사용
   health_check_grace_period  = 60                            # ASG 헬스 체크 유예
   asg_instance_warmup        = 30                            # 인스턴스 새로 고침 시 준비 시간
@@ -167,6 +176,19 @@ resource "aws_security_group_rule" "allow_alb_to_backend" {
 
   # 이 규칙은 alb와 ec2_backend 모듈이 각각의 SG를 만든 후에 적용됨
   depends_on = [module.alb, module.ec2_backend]
+}
+
+resource "aws_security_group_rule" "allow_alb_to_nat_admin" {
+  description = "Allow traffic from ALB to NAT instance on admin app port"
+  type        = "ingress"
+  from_port   = var.admin_app_port
+  to_port     = var.admin_app_port
+  protocol    = "tcp"
+
+  security_group_id        = module.nat_instance.security_group_id # 대상: NAT 인스턴스 SG
+  source_security_group_id = module.alb.security_group_id          # 소스: ALB SG
+
+  depends_on = [module.alb, module.nat_instance]
 }
 
 # -----------------------------------------------------------------------------
@@ -244,6 +266,18 @@ resource "cloudflare_dns_record" "alb_subdomain_cname" {
   zone_id = var.cloudflare_zone_id
   name    = var.subdomain_for_cert # 예: "www"
   content = module.alb.alb_dns_name
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+}
+
+# Cloudflare DNS 레코드 추가 (admin.meong.shop)
+resource "cloudflare_dns_record" "admin_cname" {
+  count = var.domain_name != "" && var.cloudflare_zone_id != "" ? 1 : 0
+
+  zone_id = var.cloudflare_zone_id
+  name    = "admin" # 서브도메인 이름
+  content = module.alb.alb_dns_name # 기존 ALB를 가리킴
   type    = "CNAME"
   proxied = true
   ttl     = 1

@@ -40,3 +40,15 @@ output "security_group_id" {
   description = "ALB에 연결된 보안 그룹의 ID"
   value       = aws_security_group.alb_sg.id
 }
+
+# FastAPI 앱 대상 그룹 ARN 출력 (이름 변경)
+output "fastapi_app_target_group_arn" {
+  description = "The ARN of the target group for the FastAPI application."
+  value       = aws_lb_target_group.fastapi_app.arn
+}
+
+# 관리자 앱 대상 그룹 ARN 출력 (새로 추가)
+output "admin_app_target_group_arn" {
+  description = "The ARN of the target group for the admin application."
+  value       = var.create_admin_target_group ? aws_lb_target_group.admin_app[0].arn : null
+}
