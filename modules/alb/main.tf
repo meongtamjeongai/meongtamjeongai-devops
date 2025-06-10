@@ -115,11 +115,11 @@ resource "aws_lb_target_group" "admin_app" {
 }
 
 # 3-3. 관리자 앱 대상 그룹에 NAT 인스턴스를 타겟으로 등록 (새로 추가)
-resource "aws_lb_target_attachment" "nat_instance_attachment" {
+resource "aws_lb_target_group_attachment" "nat_instance_attachment" {
   count = var.create_admin_target_group && var.nat_instance_id != null ? 1 : 0
 
   target_group_arn = aws_lb_target_group.admin_app[0].arn
-  target_id        = var.nat_instance_id # 루트에서 NAT 인스턴스 ID를 받아옴
+  target_id        = var.nat_instance_id # NAT 인스턴스 ID를 변수로 받아옴
   port             = var.admin_app_port
 }
 

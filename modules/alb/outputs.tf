@@ -26,16 +26,6 @@ output "https_listener_arn" {
   value       = length(aws_lb_listener.https) > 0 ? aws_lb_listener.https[0].arn : null
 }
 
-output "target_group_arn" {
-  description = "생성된 대상 그룹의 ARN (Auto Scaling Group에 연결 시 필요)"
-  value       = aws_lb_target_group.main.arn
-}
-
-output "target_group_name" {
-  description = "생성된 대상 그룹의 이름"
-  value       = aws_lb_target_group.main.name
-}
-
 output "security_group_id" {
   description = "ALB에 연결된 보안 그룹의 ID"
   value       = aws_security_group.alb_sg.id
