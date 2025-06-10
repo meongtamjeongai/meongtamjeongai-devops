@@ -106,6 +106,22 @@ module "alb" {
   depends_on = [module.vpc, module.acm]
 }
 
+# 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2)
+data "aws_ami" "amazon_linux_2_for_backend" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
 # EC2 백엔드 모듈 호출: FastAPI 애플리케이션을 호스팅하는 EC2 인스턴스 및 ASG를 구성합니다.
 module "ec2_backend" {
   source = "./modules/ec2_backend"
