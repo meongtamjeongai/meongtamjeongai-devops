@@ -116,7 +116,9 @@ resource "aws_lb_target_group" "admin_app" {
 
 # 3-3. 관리자 앱 대상 그룹에 NAT 인스턴스를 타겟으로 등록 (새로 추가)
 resource "aws_lb_target_group_attachment" "nat_instance_attachment" {
-  count = var.create_admin_target_group && var.nat_instance_id != null ? 1 : 0
+  # count가 plan 단계에서 알 수 있는 '의도'에만 의존하도록 변경합니다.
+  # nat_instance_id의 실제 존재 여부가 아닌, 관리자용 대상 그룹을 만들겠다는 의도(var.create_admin_target_group)만으로 count를 결정합니다.
+  count = var.create_admin_target_group ? 1 : 0
 
   target_group_arn = aws_lb_target_group.admin_app[0].arn
   target_id        = var.nat_instance_id # NAT 인스턴스 ID를 변수로 받아옴

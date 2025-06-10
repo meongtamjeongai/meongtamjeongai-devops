@@ -112,7 +112,7 @@ module "alb" {
   certificate_arn       = module.acm.validated_certificate_arn
 
   # ALB는 VPC 모듈과 ACM 모듈(인증서)에 의존합니다.
-  depends_on = [module.vpc, module.acm]
+  depends_on = [module.vpc, module.acm, module.nat_instance]
 }
 
 # 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2)
