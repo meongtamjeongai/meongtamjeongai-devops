@@ -98,3 +98,9 @@ variable "cloudflare_zone_id" {
   type        = string
   # 이 값은 Terraform Cloud 변수(민감 정보일 수 있음)를 통해 주입됩니다.
 }
+
+variable "nat_instance_ami_id_override" {
+  description = "NAT 인스턴스에 사용할 AMI ID. 비워두면 기본값이 사용됩니다."
+  type        = string
+  default     = "ami-03761804003d15fb2"
+}

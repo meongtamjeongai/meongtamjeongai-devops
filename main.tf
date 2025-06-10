@@ -51,6 +51,7 @@ module "nat_instance" {
   common_tags      = local.common_tags
   public_subnet_id = module.vpc.public_subnet_ids[0]
   vpc_id           = module.vpc.vpc_id # VPC 모듈의 출력값 사용
+  nat_instance_ami_id = var.nat_instance_ami_id_override
 
   private_subnet_cidrs = concat(
     [var.private_subnet_app_cidr], # 단일 앱 프라이빗 서브넷 CIDR
@@ -85,22 +86,6 @@ resource "aws_route" "private_db_subnet_to_nat" {
 # -----------------------------------------------------------------------------
 # 2. 애플리케이션 및 로드 밸런싱 (ALB, EC2 백엔드)
 # -----------------------------------------------------------------------------
-
-# 백엔드 EC2 인스턴스용 AMI 조회 (Amazon Linux 2): EC2 인스턴스에 사용될 AMI를 찾습니다.
-data "aws_ami" "amazon_linux_2_for_backend" {
-  most_recent = true
-  owners      = ["amazon"] # Amazon 제공 AMI
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"] # Amazon Linux 2 최신 HVM GP2 AMI
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
 
 # ALB 모듈 호출: 애플리케이션 트래픽을 EC2 인스턴스로 분산합니다.
 module "alb" {

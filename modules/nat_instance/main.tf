@@ -40,18 +40,11 @@ resource "aws_iam_instance_profile" "nat_instance_profile" {
   tags = local.module_tags
 }
 
-# NAT 인스턴스용 최신 Amazon Linux 2 AMI 조회 (기존과 동일)
-data "aws_ami" "nat_ami" {
-  most_recent = true
-  owners      = [var.nat_instance_ami_owner]
-  filter {
-    name   = "name"
-    values = [var.nat_instance_ami_name_filter]
-  }
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+variable "nat_instance_ami_id" {
+  description = "NAT 인스턴스에 사용할 고정된 AMI ID"
+  type        = string
+  # 이 값은 루트 variables.tf에서 기본값으로 설정하거나,
+  # Terraform Cloud 변수로 관리하는 것이 좋습니다.
 }
 
 # NAT 인스턴스용 보안 그룹
@@ -96,7 +89,7 @@ resource "aws_security_group" "nat" {
 
 # NAT EC2 인스턴스 생성
 resource "aws_instance" "nat" {
-  ami           = data.aws_ami.nat_ami.id
+  ami           = var.nat_instance_ami_id
   instance_type = var.nat_instance_type
   subnet_id     = var.public_subnet_id
 
