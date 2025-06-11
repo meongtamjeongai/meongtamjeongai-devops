@@ -16,6 +16,7 @@ AWS_REGION="${aws_region_placeholder}"
 DATABASE_URL="${database_url_placeholder}"
 SECRET_KEY="${secret_key_placeholder}"
 FIREBASE_B64_JSON="${firebase_b64_json_placeholder}"
+GEMINI_API_KEY="${gemini_api_key_placeholder}"
 
 # --- 2. Docker 설치 및 활성화 ---
 echo "Installing Docker..."
@@ -25,7 +26,7 @@ sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -a -G docker ec2-user
 
-# --- 3. 💥 ECR 로그인 (가장 중요한 수정 부분) ---
+# --- 3. 💥 ECR 로그인 ---
 # ECR 이미지를 사용하는 경우에만 로그인 시도
 if [[ "$FASTAPI_IMAGE_URI" == *".dkr.ecr."* ]]; then
   echo "ECR image detected. Logging in to Amazon ECR..."
@@ -78,6 +79,7 @@ if ! sudo docker run -d --name $CONTAINER_NAME --restart always \
   -e SECRET_KEY="$SECRET_KEY" \
   -e FIREBASE_SERVICE_ACCOUNT_KEY_PATH="/tmp/firebase_service_account.json" \
   -e FIREBASE_SERVICE_ACCOUNT_KEY_JSON_BASE64="$FIREBASE_B64_JSON" \
+  -e GEMINI_API_KEY="$GEMINI_API_KEY" \
   "$FASTAPI_IMAGE_URI"; then
   
   echo "::error:: 'docker run' command failed to start the container."

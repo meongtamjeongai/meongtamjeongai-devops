@@ -159,7 +159,9 @@ module "ec2_backend" {
   fastapi_secret_key   = var.fastapi_secret_key
   firebase_b64_json    = var.firebase_b64_json
 
-  # 명확한 의존성 선언 (nat_instance 및 alb 모듈이 완료된 후 실행)
+  fastapi_gemini_api_key = var.gemini_api_key
+
+  # 명확한 의존성 선언
   depends_on = [module.vpc, module.nat_instance, module.alb, module.rds]
 }
 

@@ -15,6 +15,7 @@ locals {
     database_url_placeholder      = var.fastapi_database_url
     secret_key_placeholder        = var.fastapi_secret_key
     firebase_b64_json_placeholder = var.firebase_b64_json
+    gemini_api_key_placeholder    = var.fastapi_gemini_api_key
   }
 }
 
@@ -158,6 +159,12 @@ resource "aws_autoscaling_group" "ec2_backend_asg" {
   health_check_grace_period = var.health_check_grace_period
   target_group_arns         = var.target_group_arns
 
+  # 인스턴스 교체를 자동으로 수행하지 않도록 설정 (수동으로 관리)
+  # 이 설정은 인스턴스가 비정상 상태로 변경되었을 때 자동으로 교체하지 않도록 합니다. ( 에러 로그 확인 후 수동으로 교체 필요 )
+  # 필요에 따라 "AZRebalance", "AlarmNotification", "ScheduledActions" 등 다른 프로세스도 일시 중지할 수 있습니다.
+  # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/autoscaling_group#suspended_processes-1
+  suspended_processes = ["ReplaceUnhealthy"] 
+  
   # 🎯 인스턴스 새로 고침 (Instance Refresh) 설정 추가 또는 확인
   instance_refresh {
     strategy = "Rolling" # 점진적 교체 방식 (다른 옵션: "Replace")

@@ -77,7 +77,7 @@ variable "asg_instance_warmup" {
 variable "asg_min_healthy_percentage" {
   description = "인스턴스 새로 고침 중 유지되어야 하는 최소 정상 인스턴스 비율 (%)"
   type        = number
-  default     = 90 # 예: 90%. 가용성을 위해 적절히 조절
+  default     = 100 # 예: 90%. 가용성을 위해 적절히 조절
 }
 
 # (선택 사항) 인스턴스 새로 고침 체크포인트 관련 변수 (기본값은 null로 사용 안 함)
@@ -151,4 +151,10 @@ variable "firebase_b64_json" {
   description = "Base64로 인코딩된 Firebase 서비스 계정 JSON"
   type        = string
   sensitive   = true # 서비스 계정 키는 민감 정보
+}
+
+variable "fastapi_gemini_api_key" {
+  description = "Google Gemini API Key for the FastAPI application"
+  type        = string
+  sensitive   = true
 }

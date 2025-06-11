@@ -110,3 +110,9 @@ variable "admin_app_port" {
   type        = number
   default     = 8501 # 예: Streamlit 기본 포트
 }
+
+variable "gemini_api_key" {
+  description = "Google Gemini API Key"
+  type        = string
+  sensitive   = true
+}
