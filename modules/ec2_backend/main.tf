@@ -16,6 +16,8 @@ locals {
     secret_key_placeholder        = var.fastapi_secret_key
     firebase_b64_json_placeholder = var.firebase_b64_json
     gemini_api_key_placeholder    = var.fastapi_gemini_api_key
+
+    s3_bucket_name_placeholder    = var.s3_bucket_name
   }
 }
 

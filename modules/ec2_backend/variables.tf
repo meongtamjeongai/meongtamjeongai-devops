@@ -158,3 +158,8 @@ variable "fastapi_gemini_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "s3_bucket_name" {
+  description = "The name of the S3 bucket for image storage."
+  type        = string
+}

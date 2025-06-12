@@ -34,3 +34,8 @@ output "iam_instance_profile_arn" {
   description = "EC2 백엔드 인스턴스용 IAM 인스턴스 프로파일의 ARN"
   value       = aws_iam_instance_profile.ec2_backend_profile.arn
 }
+
+output "iam_role_name" {
+  description = "EC2 백엔드 인스턴스에 대한 IAM 역할의 이름입니다."
+  value       = aws_iam_role.ec2_backend_role.name
+}

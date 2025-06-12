@@ -13,7 +13,7 @@ module "acm" {
   environment  = var.environment
   common_tags  = local.common_tags
 
-  domain_name               = var.domain_name                                                                      # 예: "mydomain.com"
+  domain_name               = var.domain_name
     subject_alternative_names = compact(concat(
     var.subdomain_for_cert != "" ? ["${var.subdomain_for_cert}.${var.domain_name}"] : [],
     ["admin.${var.domain_name}"] # admin 서브도메인 추가
@@ -161,6 +161,9 @@ module "ec2_backend" {
 
   fastapi_gemini_api_key = var.gemini_api_key
 
+  # S3 버킷 이름 전달: FastAPI 애플리케이션에서 이미지 업로드에 사용
+  s3_bucket_name = aws_s3_bucket.image_storage.id
+
   # 명확한 의존성 선언
   depends_on = [module.vpc, module.nat_instance, module.alb, module.rds]
 }
@@ -194,7 +197,7 @@ resource "aws_security_group_rule" "allow_alb_to_nat_admin" {
 }
 
 # -----------------------------------------------------------------------------
-# 3. 데이터베이스 (RDS)
+# 3. 데이터베이스 및 스토리지 (RDS, S3)
 # -----------------------------------------------------------------------------
 
 # RDS 모듈 호출: 데이터베이스 인스턴스를 구성합니다.
@@ -221,6 +224,59 @@ resource "aws_security_group_rule" "allow_ec2_to_rds" {
   security_group_id        = module.rds.rds_security_group_id     # 대상: RDS 보안 그룹
   source_security_group_id = module.ec2_backend.security_group_id # 소스: EC2 보안 그룹
 }
+
+# S3 버킷 생성: FastAPI 애플리케이션에서 이미지 파일을 저장합니다.
+# 이 버킷은 이미지 업로드 및 다운로드에 사용됩니다.
+resource "aws_s3_bucket" "image_storage" {
+  # 버킷 이름은 전역적으로 고유해야 하므로, 프로젝트와 환경 이름을 조합합니다.
+  bucket = "${var.project_name}-${var.environment}-images"
+
+  tags = merge(local.common_tags, {
+    Purpose = "Image storage for FastAPI application"
+  })
+}
+
+# S3 버킷에 대한 퍼블릭 액세스 차단 설정: 모든 퍼블릭 액세스를 차단합니다.
+resource "aws_s3_bucket_public_access_block" "image_storage_access_block" {
+  bucket = aws_s3_bucket.image_storage.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# EC2 인스턴스용 S3 접근 IAM 정책 생성
+# EC2 인스턴스가 이미지 버킷에 객체를 Put/Get 할 수 있도록 허용합니다.
+resource "aws_iam_policy" "s3_access_for_ec2" {
+  name        = "${var.project_name}-${var.environment}-s3-access-policy"
+  description = "Allows EC2 instances to Put and Get objects from the image storage S3 bucket."
+
+  # 최소 권한 원칙: 특정 버킷에 대한 PutObject, GetObject 액션만 허용
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "s3:PutObject",
+          "s3:GetObject"
+        ],
+        Resource = "${aws_s3_bucket.image_storage.arn}/*" # 버킷 내 모든 객체에 대한 권한
+      }
+    ]
+  })
+}
+
+# 생성한 S3 접근 정책을 EC2 역할(Role)에 연결
+resource "aws_iam_role_policy_attachment" "ec2_s3_access_attachment" {
+  # ec2_backend 모듈의 출력값에서 역할 이름을 가져옵니다.
+  # 이를 위해 ec2_backend 모듈에 'iam_role_name' 출력이 필요합니다.
+  role       = module.ec2_backend.iam_role_name
+  policy_arn = aws_iam_policy.s3_access_for_ec2.arn
+}
+
+
 
 # -----------------------------------------------------------------------------
 # 4. 기타 서비스 (ECR)

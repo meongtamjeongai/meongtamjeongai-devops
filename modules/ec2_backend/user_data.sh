@@ -17,6 +17,7 @@ DATABASE_URL="${database_url_placeholder}"
 SECRET_KEY="${secret_key_placeholder}"
 FIREBASE_B64_JSON="${firebase_b64_json_placeholder}"
 GEMINI_API_KEY="${gemini_api_key_placeholder}"
+S3_BUCKET_NAME="${s3_bucket_name_placeholder}"
 
 # --- 2. Docker 설치 및 활성화 ---
 echo "Installing Docker..."
@@ -80,6 +81,7 @@ if ! sudo docker run -d --name $CONTAINER_NAME --restart always \
   -e FIREBASE_SERVICE_ACCOUNT_KEY_PATH="/tmp/firebase_service_account.json" \
   -e FIREBASE_SERVICE_ACCOUNT_KEY_JSON_BASE64="$FIREBASE_B64_JSON" \
   -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+  -e S3_BUCKET_NAME="$S3_BUCKET_NAME" \
   "$FASTAPI_IMAGE_URI"; then
   
   echo "::error:: 'docker run' command failed to start the container."
