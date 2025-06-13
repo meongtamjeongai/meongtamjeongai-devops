@@ -11,8 +11,8 @@ locals {
     ecr_repository_url_placeholder = var.ecr_repository_url
     fallback_image_placeholder     = var.fallback_docker_image
 
-    container_internal_port_placeholder = var.fastapi_app_port     # 컨테이너 내부 포트
-    host_exposed_port_placeholder       = var.host_app_port        # 호스트에 노출될 포트
+    container_internal_port_placeholder = var.fastapi_app_port
+    host_exposed_port_placeholder       = var.host_app_port
     aws_region_placeholder              = var.aws_region
 
     database_url_placeholder      = var.fastapi_database_url
