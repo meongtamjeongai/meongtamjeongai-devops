@@ -43,7 +43,6 @@ resource "cloudflare_dns_record" "validation" {
 resource "aws_acm_certificate_validation" "this" {
   certificate_arn = aws_acm_certificate.this.arn
 
-  # 👈 수정된 부분:
   # aws_acm_certificate 리소스의 domain_validation_options 에서 직접 FQDN을 가져옵니다.
   # 이 값들은 Cloudflare에 생성될 레코드의 이름과 정확히 일치해야 합니다.
   validation_record_fqdns = [

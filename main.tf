@@ -144,7 +144,10 @@ module "ec2_backend" {
   instance_type          = "t2.micro"  
 
   aws_region           = var.aws_region
-  fastapi_docker_image = var.custom_fastapi_docker_image # 👈 루트 변수 값을 모듈의 입력으로 전달
+
+  ecr_repository_url    = aws_ecr_repository.fastapi_app.repository_url # 👈 생성된 ECR URL 전달
+  fallback_docker_image = var.custom_fastapi_docker_image               # 👈 Fallback 이미지 전달
+
   host_app_port        = var.backend_app_port            # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
   fastapi_app_port     = 80                              # Dockerfile EXPOSE 및 CMD 포트와 일치하도록 설정 (또는 변수화)
 
@@ -247,12 +250,11 @@ resource "aws_s3_bucket_public_access_block" "image_storage_access_block" {
 }
 
 # EC2 인스턴스용 S3 접근 IAM 정책 생성
-# EC2 인스턴스가 이미지 버킷에 객체를 Put/Get 할 수 있도록 허용합니다.
 resource "aws_iam_policy" "s3_access_for_ec2" {
   name        = "${var.project_name}-${var.environment}-s3-access-policy"
   description = "Allows EC2 instances to Put and Get objects from the image storage S3 bucket."
 
-  # 최소 권한 원칙: 특정 버킷에 대한 PutObject, GetObject 액션만 허용
+  # 최소 권한 원칙: 특정 버킷에 대한 Put/Get/Delete 액션만 허용
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -260,7 +262,8 @@ resource "aws_iam_policy" "s3_access_for_ec2" {
         Effect   = "Allow",
         Action   = [
           "s3:PutObject",
-          "s3:GetObject"
+          "s3:GetObject",
+          "s3:DeleteObject"
         ],
         Resource = "${aws_s3_bucket.image_storage.arn}/*" # 버킷 내 모든 객체에 대한 권한
       }

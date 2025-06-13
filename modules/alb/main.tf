@@ -89,7 +89,7 @@ resource "aws_lb_target_group" "fastapi_app" {
   tags = merge(local.module_tags, { Purpose = "FastAPI-App-Target" })
 }
 
-# 3-2. 관리자 앱용 대상 그룹 (새로 추가)
+# 3-2. 관리자 앱용 대상 그룹
 resource "aws_lb_target_group" "admin_app" {
   count = var.create_admin_target_group ? 1 : 0
 
@@ -114,7 +114,7 @@ resource "aws_lb_target_group" "admin_app" {
   tags = merge(local.module_tags, { Purpose = "Admin-App-Target" })
 }
 
-# 3-3. 관리자 앱 대상 그룹에 NAT 인스턴스를 타겟으로 등록 (새로 추가)
+# 3-3. 관리자 앱 대상 그룹에 NAT 인스턴스를 타겟으로 등록
 resource "aws_lb_target_group_attachment" "nat_instance_attachment" {
   # count가 plan 단계에서 알 수 있는 '의도'에만 의존하도록 변경합니다.
   # nat_instance_id의 실제 존재 여부가 아닌, 관리자용 대상 그룹을 만들겠다는 의도(var.create_admin_target_group)만으로 count를 결정합니다.
@@ -173,7 +173,7 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# 4-3. HTTPS 리스너 규칙 (새로 추가)
+# 4-3. HTTPS 리스너 규칙
 # 호스트 헤더가 'admin.meong.shop'인 경우, 관리자 앱 대상 그룹으로 트래픽을 보냄.
 resource "aws_lb_listener_rule" "admin_host_header_rule" {
   count = var.create_admin_target_group && var.admin_app_hostname != "" && var.create_https_listener ? 1 : 0

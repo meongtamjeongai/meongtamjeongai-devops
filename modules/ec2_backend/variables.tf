@@ -99,12 +99,6 @@ variable "health_check_grace_period" {
   default     = 60
 }
 
-# Docker 및 FastAPI 관련 변수
-variable "fastapi_docker_image" {
-  description = "실행할 FastAPI 애플리케이션의 Docker 이미지 (예: your-account/your-repo:latest)"
-  type        = string
-}
-
 variable "fastapi_app_port" {
   description = "FastAPI 애플리케이션이 컨테이너 내부에서 실행되는 포트"
   type        = number
@@ -161,5 +155,15 @@ variable "fastapi_gemini_api_key" {
 
 variable "s3_bucket_name" {
   description = "The name of the S3 bucket for image storage."
+  type        = string
+}
+
+variable "ecr_repository_url" {
+  description = "확인할 대상 ECR 리포지토리의 URL입니다."
+  type        = string
+}
+
+variable "fallback_docker_image" {
+  description = "ECR 리포지토리가 비어있을 경우 사용할 대체 이미지 URI입니다."
   type        = string
 }

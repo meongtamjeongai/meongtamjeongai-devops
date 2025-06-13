@@ -7,7 +7,10 @@ locals {
 
   # User Data 렌더링 시 사용할 변수 맵 (플레이스홀더 이름 변경 및 host_app_port 추가)
   user_data_template_vars = {
-    fastapi_docker_image_placeholder    = var.fastapi_docker_image # 👈 모듈 입력 변수(var.fastapi_docker_image)를 플레이스홀더 이름으로 매핑
+
+    ecr_repository_url_placeholder = var.ecr_repository_url
+    fallback_image_placeholder     = var.fallback_docker_image
+
     container_internal_port_placeholder = var.fastapi_app_port     # 컨테이너 내부 포트
     host_exposed_port_placeholder       = var.host_app_port        # 호스트에 노출될 포트
     aws_region_placeholder              = var.aws_region
@@ -130,7 +133,9 @@ resource "aws_launch_template" "ec2_backend_lt" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required" # IMDSv2 사용
-    http_put_response_hop_limit = 1
+
+    # Docker 컨테이너 환경을 위해 홉 제한을 2로 설정(기본값 1, 도커 네트워크 환경 host, bridge 에 따라 조절)
+    http_put_response_hop_limit = 2
   }
 
   # 기본적으로 최신 버전의 시작 템플릿을 사용하도록 설정
