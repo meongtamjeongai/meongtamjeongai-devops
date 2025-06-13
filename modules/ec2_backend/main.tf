@@ -8,8 +8,7 @@ locals {
   # User Data 렌더링 시 사용할 변수 맵 (플레이스홀더 이름 변경 및 host_app_port 추가)
   user_data_template_vars = {
 
-    ecr_repository_url_placeholder = var.ecr_repository_url
-    fallback_image_placeholder     = var.fallback_docker_image
+    fastapi_docker_image_placeholder    = var.fastapi_docker_image
 
     container_internal_port_placeholder = var.fastapi_app_port
     host_exposed_port_placeholder       = var.host_app_port

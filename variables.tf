@@ -62,12 +62,6 @@ variable "private_db_subnet_cidrs" {
 # Ⅳ. 애플리케이션 및 인스턴스 설정 (Application & Instance)
 # ==============================================================================
 
-variable "custom_fastapi_docker_image" {
-  description = "ECR 리포지토리가 비어있을 경우 사용할 대체(Fallback) Docker 이미지 URI입니다."
-  type        = string
-  default     = "tiangolo/uvicorn-gunicorn-fastapi:python3.9"
-}
-
 variable "backend_app_port" {
   description = "EC2 인스턴스 내부에서 실행되는 백엔드 애플리케이션의 포트입니다."
   type        = number

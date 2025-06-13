@@ -158,12 +158,7 @@ variable "s3_bucket_name" {
   type        = string
 }
 
-variable "ecr_repository_url" {
-  description = "확인할 대상 ECR 리포지토리의 URL입니다."
-  type        = string
-}
-
-variable "fallback_docker_image" {
-  description = "ECR 리포지토리가 비어있을 경우 사용할 대체 이미지 URI입니다."
+variable "fastapi_docker_image" {
+  description = "실행할 FastAPI 애플리케이션의 Docker 이미지"
   type        = string
 }

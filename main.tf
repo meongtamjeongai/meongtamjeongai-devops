@@ -145,8 +145,7 @@ module "ec2_backend" {
 
   aws_region           = var.aws_region
 
-  ecr_repository_url    = aws_ecr_repository.fastapi_app.repository_url # 👈 생성된 ECR URL 전달
-  fallback_docker_image = var.custom_fastapi_docker_image               # 👈 Fallback 이미지 전달
+  fastapi_docker_image = aws_ecr_repository.fastapi_app.repository_url
 
   host_app_port        = var.backend_app_port            # 루트의 backend_app_port -> ec2_backend의 host_app_port로 전달
   fastapi_app_port     = 80                              # Dockerfile EXPOSE 및 CMD 포트와 일치하도록 설정 (또는 변수화)
