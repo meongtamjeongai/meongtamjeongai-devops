@@ -24,7 +24,6 @@ variable "vpc_id" {
 variable "db_subnet_ids" {
   description = "RDS 인스턴스를 배포할 프라이빗 DB 서브넷 ID 목록"
   type        = list(string)
-  # 현재 저희 구성에서는 단일 DB 서브넷을 사용 중이므로, 루트 모듈에서 [module.vpc.private_db_subnet_id] 와 같이 전달합니다.
 }
 
 variable "db_engine" {
@@ -55,7 +54,7 @@ variable "db_allocated_storage" {
 variable "db_storage_type" {
   description = "스토리지 유형 (gp2, gp3, io1 등)"
   type        = string
-  default     = "gp3" # gp2보다 성능 및 비용 효율이 좋음
+  default     = "gp2" # 프리티어에서는 일반 SSD (gp2) 사용
 }
 
 variable "db_name" {
@@ -99,7 +98,7 @@ variable "skip_final_snapshot" {
 variable "backup_retention_period" {
   description = "자동 백업 보존 기간 (일, 0이면 비활성화, 프리티어는 7일 가능)"
   type        = number
-  default     = 0 # 개발/테스트용으로 비활성화, 필요시 7 이상으로 설정
+  default     = 7 # 개발/테스트용으로 비활성화, 필요시 7 이상으로 설정
 }
 
 variable "storage_encrypted" {
