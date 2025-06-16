@@ -1,5 +1,5 @@
 #!/bin/bash
-# modules/ec2_backend/user_data.sh (진짜 최종 수정 버전)
+# modules/ec2_backend/user_data.sh
 
 # 로그를 Cloud-init 로그와 시스템 로그 모두에 기록
 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
@@ -53,7 +53,8 @@ echo "✅ Amazon ECR에 성공적으로 로그인했습니다."
 ECR_REPOSITORY_NAME=$(echo "$ECR_REPOSITORY_URL" | cut -d'/' -f2)
 echo "ECR 저장소($ECR_REPOSITORY_NAME)의 이미지 존재 여부 확인 중..."
 
-if sudo aws ecr describe-images --repository-name "$ECR_REPOSITORY_NAME" --region "$AWS_REGION" > /dev/null 2>&1; then
+# 태그가 없으면 이 명령어는 실패(non-zero exit code)하고, 'else' 블록으로 넘어갑니다.
+if sudo aws ecr describe-images --repository-name "$ECR_REPOSITORY_NAME" --image-ids imageTag=latest --region "$AWS_REGION" > /dev/null 2>&1; then
     echo "✅ ECR 저장소에 이미지가 존재합니다. ':latest' 태그를 사용합니다."
     FINAL_IMAGE_TO_PULL="$ECR_REPOSITORY_URL:latest"
 else

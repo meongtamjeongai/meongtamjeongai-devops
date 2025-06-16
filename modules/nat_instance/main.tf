@@ -99,6 +99,12 @@ resource "aws_instance" "nat" {
   vpc_security_group_ids = [aws_security_group.nat.id]
   source_dest_check      = false
 
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # IMDSv2 강제
+    http_put_response_hop_limit = 2          # Docker 컨테이너 환경 지원
+  }
+
   user_data = <<-EOF
               #!/bin/bash
               # Enable IP forwarding
