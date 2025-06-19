@@ -1,5 +1,8 @@
 # modules/ec2_backend/main.tf
 
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+  
 locals {
   module_tags = merge(var.common_tags, {
     TerraformModule = "ec2-backend"
