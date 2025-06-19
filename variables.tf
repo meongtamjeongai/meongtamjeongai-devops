@@ -139,9 +139,3 @@ variable "alarm_notification_email" {
   type        = string
   default     = "" # 기본값은 비워둠. 실제 이메일 주소는 tfvars 또는 Terraform Cloud 변수로 주입
 }
-
-variable "db_password" {
-  description = "데이터베이스 마스터 사용자의 암호입니다."
-  type        = string
-  sensitive   = true
-}
