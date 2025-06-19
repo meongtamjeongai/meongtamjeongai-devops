@@ -25,6 +25,22 @@ FALLBACK_IMAGE="tiangolo/uvicorn-gunicorn-fastapi:python3.9"
 # 최종적으로 사용할 이미지를 저장할 셸 변수
 FINAL_IMAGE_TO_PULL=""
 
+# --- SSM Parameter Store에서 비밀 정보 가져오기 ---
+echo "--- SSM Parameter Store에서 비밀 정보 조회 시작 ---"
+# --with-decryption 옵션은 SecureString 타입을 해독하는 데 필수적입니다.
+# query 로 필요한 값만 추출하고, --output text 로 순수 텍스트 값만 얻습니다.
+DATABASE_URL=$(aws ssm get-parameter --name "$PARAM_DATABASE_URL" --with-decryption --region "$AWS_REGION" --query "Parameter.Value" --output text)
+SECRET_KEY=$(aws ssm get-parameter --name "$PARAM_SECRET_KEY" --with-decryption --region "$AWS_REGION" --query "Parameter.Value" --output text)
+FIREBASE_B64_JSON=$(aws ssm get-parameter --name "$PARAM_FIREBASE_JSON" --with-decryption --region "$AWS_REGION" --query "Parameter.Value" --output text)
+GEMINI_API_KEY=$(aws ssm get-parameter --name "$PARAM_GEMINI_KEY" --with-decryption --region "$AWS_REGION" --query "Parameter.Value" --output text)
+
+# 조회 실패 시 스크립트 중단
+if [ -z "$DATABASE_URL" ] || [ -z "$SECRET_KEY" ]; then
+    echo "::error:: SSM Parameter Store에서 비밀 정보를 가져오는 데 실패했습니다."
+    exit 1
+fi
+echo "✅ SSM Parameter Store에서 비밀 정보를 성공적으로 조회했습니다."
+
 # --- 2. Docker 설치 및 활성화 ---
 echo "Docker 설치 중..."
 sudo yum update -y -q

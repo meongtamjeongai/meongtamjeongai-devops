@@ -67,11 +67,12 @@ resource "aws_security_group" "nat" {
 
   # 🎯 추가: 관리자 앱 포트로의 인바운드 규칙
   ingress {
-    description     = "Allow access to Admin App from specified IPs"
+    description     = "Allow access to Admin App only from Cloudflare IPs"
     from_port       = var.admin_app_port
     to_port         = var.admin_app_port
     protocol        = "tcp"
-    cidr_blocks     = var.admin_app_source_cidrs
+    cidr_blocks      = var.admin_app_source_ipv4_cidrs
+    ipv6_cidr_blocks = var.admin_app_source_ipv6_cidrs
   }
   
   # 아웃바운드 규칙: 모든 외부 트래픽 허용 (기존과 동일)

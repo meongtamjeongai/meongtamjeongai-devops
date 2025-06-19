@@ -56,8 +56,14 @@ variable "admin_app_port" {
   default     = 8501 # 예시 포트
 }
 
-variable "admin_app_source_cidrs" {
-  description = "관리자 앱에 접속을 허용할 소스 IP CIDR 블록 목록"
+variable "admin_app_source_ipv4_cidrs" {
+  description = "관리자 앱에 접속을 허용할 소스 IPv4 CIDR 블록 목록"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # ☢️ 보안 경고: 실제 운영 시에는 사무실 IP 등 특정 IP 대역으로 반드시 제한하세요!
+  default     = []
+}
+
+variable "admin_app_source_ipv6_cidrs" {
+  description = "관리자 앱에 접속을 허용할 소스 IPv6 CIDR 블록 목록"
+  type        = list(string)
+  default     = []
 }

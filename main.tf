@@ -4,6 +4,24 @@
 # 다양한 모듈을 호출하고, 각 모듈 간의 의존성을 연결합니다.
 
 # -----------------------------------------------------------------------------
+# 데이터 소스: Cloudflare IP 주소 목록 조회
+# -----------------------------------------------------------------------------
+data "http" "cloudflare_ips_v4" {
+  url = "https://www.cloudflare.com/ips-v4"
+}
+
+data "http" "cloudflare_ips_v6" {
+  url = "https://www.cloudflare.com/ips-v6"
+}
+
+locals {
+  # http 데이터 소스의 결과(response_body)는 줄바꿈(\n)으로 구분된 하나의 긴 문자열입니다.
+  # split 함수로 이를 리스트로 변환하고, compact 함수로 혹시 모를 빈 문자열을 제거합니다.
+  cloudflare_ipv4_cidrs = compact(split("\n", data.http.cloudflare_ips_v4.response_body))
+  cloudflare_ipv6_cidrs = compact(split("\n", data.http.cloudflare_ips_v6.response_body))
+}
+
+# -----------------------------------------------------------------------------
 # 0. ACM 인증서 생성 (Cloudflare DNS 검증)
 # -----------------------------------------------------------------------------
 module "acm" {
@@ -61,8 +79,10 @@ module "nat_instance" {
     var.private_db_subnet_cidrs    # DB 프라이빗 서브넷 CIDR 목록 (리스트)
   )
 
-  # admin_app_port         = 8080 # 또는 var.admin_app_port 등으로 관리
-  # admin_app_source_cidrs = ["YOUR_OFFICE_IP/32", "YOUR_HOME_IP/32"] # 예시: 사무실 및 집 IP만 허용
+  # 관리자 앱 포트 및 접근 소스 IP 설정 (Cloudflare IP만 허용)
+  admin_app_port              = var.admin_app_port
+  admin_app_source_ipv4_cidrs = local.cloudflare_ipv4_cidrs
+  admin_app_source_ipv6_cidrs = local.cloudflare_ipv6_cidrs
 
   depends_on = [module.vpc] # VPC가 먼저 생성되도록 의존성 명시
 }
@@ -160,14 +180,16 @@ module "ec2_backend" {
   fastapi_database_url = "postgresql://${module.rds.db_instance_username}:${var.db_password}@${module.rds.db_instance_endpoint}/${module.rds.db_instance_name}"
   fastapi_secret_key   = var.fastapi_secret_key
   firebase_b64_json    = var.firebase_b64_json
-
   fastapi_gemini_api_key = var.gemini_api_key
+
+  # SSM에서 비밀을 조회할 것이므로, 파라미터 이름들을 전달합니다.
+  ssm_parameter_names = module.ssm_secrets.parameter_names
 
   # S3 버킷 이름 전달: FastAPI 애플리케이션에서 이미지 업로드에 사용
   s3_bucket_name = aws_s3_bucket.image_storage.id
 
   # 명확한 의존성 선언
-  depends_on = [module.vpc, module.nat_instance, module.alb, module.rds]
+  depends_on = [module.vpc, module.nat_instance, module.alb, module.rds, module.ssm_secrets]
 }
 
 # ALB에서 백엔드 EC2 인스턴스로의 트래픽을 허용하는 보안 그룹 규칙 추가:
@@ -370,4 +392,47 @@ resource "cloudflare_dns_record" "alb_wildcard_cname" {
   type    = "CNAME"
   proxied = true
   ttl     = 1
+}
+
+# -----------------------------------------------------------------------------
+# 6. 모니터링 (CloudWatch)
+# -----------------------------------------------------------------------------
+module "monitoring" {
+  source = "./modules/monitoring"
+
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+
+  # EC2 및 RDS 모듈에서 출력된 리소스 식별자를 전달
+  backend_asg_name      = module.ec2_backend.asg_name
+  rds_instance_identifier = module.rds.db_instance_identifier
+
+  # 알림을 받을 이메일 주소 전달
+  alarm_notification_email = var.alarm_notification_email
+
+  depends_on = [module.ec2_backend, module.rds] # 대시보드 생성 전 대상 리소스가 존재해야 함
+}
+
+# -----------------------------------------------------------------------------
+# 7. 중앙 비밀 관리 (SSM Parameter Store)
+# -----------------------------------------------------------------------------
+module "ssm_secrets" {
+  source = "./modules/ssm_secrets"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  # Terraform Cloud 변수 또는 tfvars에서 민감 정보를 받아 전달
+  db_password        = var.db_password
+  fastapi_secret_key = var.fastapi_secret_key
+  firebase_b64_json  = var.firebase_b64_json
+  gemini_api_key     = var.gemini_api_key
+
+  # RDS 모듈의 출력값을 참조하여 DATABASE_URL 구성
+  db_instance_endpoint = module.rds.db_instance_endpoint
+  db_instance_username = module.rds.db_instance_username
+  db_instance_name     = module.rds.db_instance_name
+
+  depends_on = [module.rds] # RDS 정보가 필요하므로 의존성 명시
 }

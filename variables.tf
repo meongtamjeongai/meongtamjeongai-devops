@@ -129,3 +129,19 @@ variable "gemini_api_key" {
   type        = string
   sensitive   = true
 }
+
+# ==============================================================================
+# Ⅵ. 민감 정보 및 외부 서비스 키 (Secrets & API Keys)
+# ==============================================================================
+
+variable "alarm_notification_email" {
+  description = "알림을 수신할 이메일 주소입니다. 최초 생성 후 AWS에서 보낸 구독 확인 메일을 승인해야 합니다."
+  type        = string
+  default     = "" # 기본값은 비워둠. 실제 이메일 주소는 tfvars 또는 Terraform Cloud 변수로 주입
+}
+
+variable "db_password" {
+  description = "데이터베이스 마스터 사용자의 암호입니다."
+  type        = string
+  sensitive   = true
+}

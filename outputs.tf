@@ -149,3 +149,10 @@ output "vpc_module_outputs" {
   value       = module.vpc # 모듈 전체를 출력하면 모든 output이 나옵니다.
   sensitive   = true     # 내부에 민감한 정보가 포함될 수 있으므로 true로 설정합니다.
 }
+
+## 📊 모니터링 (CloudWatch)
+# ------------------------------------------------------------------------------
+output "cloudwatch_dashboard_url" {
+  description = "CloudWatch 대시보드로 바로 이동할 수 있는 URL"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${module.monitoring.dashboard_name}"
+}

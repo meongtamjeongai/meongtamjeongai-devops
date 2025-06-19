@@ -162,3 +162,8 @@ variable "fastapi_docker_image" {
   description = "실행할 FastAPI 애플리케이션의 Docker 이미지"
   type        = string
 }
+
+variable "ssm_parameter_names" {
+  description = "A map of SSM parameter names for secrets."
+  type        = map(string)
+}

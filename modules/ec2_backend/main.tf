@@ -20,6 +20,13 @@ locals {
     gemini_api_key_placeholder    = var.fastapi_gemini_api_key
 
     s3_bucket_name_placeholder    = var.s3_bucket_name
+
+    # SSM 파라미터 이름을 전달
+    database_url_param_name      = var.ssm_parameter_names["DATABASE_URL"]
+    secret_key_param_name        = var.ssm_parameter_names["FASTAPI_SECRET_KEY"]
+    firebase_b64_json_param_name = var.ssm_parameter_names["FIREBASE_B64_JSON"]
+    gemini_api_key_param_name    = var.ssm_parameter_names["GEMINI_API_KEY"]
+
   }
 }
 
@@ -52,6 +59,28 @@ resource "aws_iam_role_policy_attachment" "ec2_backend_ecr_ro" {
 resource "aws_iam_role_policy_attachment" "ssm_policy" {
   role       = aws_iam_role.ec2_backend_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# SSM 파라미터 읽기 권한 정책
+resource "aws_iam_policy" "ssm_read_policy" {
+  name        = "${var.project_name}-${var.environment}-ssm-read-policy"
+  description = "Allows reading specific SSM parameters for the application"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = "ssm:GetParameters",
+        Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/${var.environment}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_read_attachment" {
+  role       = aws_iam_role.ec2_backend_role.name
+  policy_arn = aws_iam_policy.ssm_read_policy.arn
 }
 
 # CloudWatch Agent 사용 계획이 있다면 아래 정책도 연결 가능
