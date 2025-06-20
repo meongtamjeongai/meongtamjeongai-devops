@@ -10,12 +10,6 @@ output "primary_network_interface_id" {
   value       = aws_instance.nat.primary_network_interface_id
 }
 
-# EIP를 사용하지 않으므로 EIP 관련 출력은 제거
-# output "public_ip" {
-#   description = "NAT 인스턴스에 할당된 공인 IP 주소 (Elastic IP)"
-#   value       = aws_eip.nat.public_ip
-# }
-
 output "dynamic_public_ip" {
   description = "NAT 인스턴스에 할당된 동적 공인 IP 주소 (인스턴스 재시작 시 변경될 수 있음)"
   value       = aws_instance.nat.public_ip # 인스턴스의 공인 IP 속성 참조
